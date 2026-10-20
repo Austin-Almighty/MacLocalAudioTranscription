@@ -1,0 +1,60 @@
+{
+  "audioFile": "/Users/autsintliao/claude_workspace/local_transcription/build/verification/voz-fixture.aiff",
+  "deviceEvidence": "Instruments Core AI trace contains two mel and two encoder Neural Engine hardware prediction events; see voz-ane-events.xml.",
+  "modelDirectory": "/Users/autsintliao/Library/Caches/desert-ant-models/desert-ant-labs/voz/v0.4.0",
+  "modelLoadSeconds": 8.046869993209839,
+  "modelRevision": "v0.4.0",
+  "preferredOperationDevices": {
+    "decoder.mlmodelc": {
+      "cpu": 42
+    },
+    "encoder.mlmodelc": {
+      "neuralEngine": 1476
+    },
+    "mel.mlmodelc": {
+      "neuralEngine": 25
+    }
+  },
+  "runs": [
+    {
+      "audioSeconds": 5.7895625,
+      "processingSeconds": 0.10748803615570068,
+      "realtimeFactor": 53.86238977902237,
+      "text": "This is a local speech recognition test. The quick brown fox jumps over the lazy dog",
+      "wordCount": 16
+    },
+    {
+      "audioSeconds": 5.7895625,
+      "processingSeconds": 0.09183299541473389,
+      "realtimeFactor": 63.044469733926476,
+      "text": "This is a local speech recognition test. The quick brown fox jumps over the lazy dog",
+      "wordCount": 16
+    }
+  ],
+  "sdkVersion": "4.0.0",
+  "verifiedAt": "2026-10-16T20:43:20Z",
+  "hardware": "Apple M4 Pro (Mac16,8)",
+  "runtimeNeuralEnginePredictions": [
+    {
+      "label": "mel_main__Op0_AneInference Prediction",
+      "startSeconds": 1.59373625,
+      "durationSeconds": 8.0416e-05
+    },
+    {
+      "label": "encoder_main__Op0_AneInference Prediction",
+      "startSeconds": 1.599791166,
+      "durationSeconds": 0.025027834
+    },
+    {
+      "label": "mel_main__Op0_AneInference Prediction",
+      "startSeconds": 1.756361333,
+      "durationSeconds": 8.75e-05
+    },
+    {
+      "label": "encoder_main__Op0_AneInference Prediction",
+      "startSeconds": 1.756855375,
+      "durationSeconds": 0.025867916
+    }
+  ],
+  "runtimeTrace": "build/verification/voz-core-ai.trace"
+}

@@ -1,0 +1,13 @@
+{
+  "audioSeconds" : 5.7895624999999997,
+  "cacheDirectory" : "\/Users\/autsintliao\/Library\/Caches",
+  "checkedAt" : "2026-10-16T23:10:34Z",
+  "error" : "",
+  "isBusy" : false,
+  "isReady" : true,
+  "mode" : "cached",
+  "networkProbeBlocked" : true,
+  "networkProbeError" : "Error Domain=NSPOSIXErrorDomain Code=1 \"Operation not permitted\" UserInfo={_NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <FF9817F2-2A53-49E7-98B1-9683F1609A69>.<1>, _kCFStreamErrorDomainKey=1, _kCFStreamErrorCodeKey=1, _NSURLErrorRelatedURLSessionTaskErrorKey=(\n    \"LocalDataTask <FF9817F2-2A53-49E7-98B1-9683F1609A69>.<1>\"\n), _NSURLErrorNWPathKey=satisfied (Path is satisfied), interface: en0[802.11], ipv4, ipv6, dns, uses wifi, LQM: good}",
+  "processingSeconds" : 0.13128399848937988,
+  "text" : "This is a local speech recognition test. The quick brown fox jumps over the lazy dog"
+}

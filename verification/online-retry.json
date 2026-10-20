@@ -1,0 +1,13 @@
+{
+  "audioSeconds" : 6.2306875000000002,
+  "cacheDirectory" : "\/Users\/autsintliao\/claude_workspace\/local_transcription\/build\/manual-checks\/home\/Library\/Caches",
+  "checkedAt" : "2026-10-16T22:58:31Z",
+  "error" : "",
+  "isBusy" : false,
+  "isReady" : true,
+  "mode" : "online",
+  "networkProbeBlocked" : false,
+  "networkProbeError" : "",
+  "processingSeconds" : 0.12073004245758057,
+  "text" : "Esta es una prueba de transcripción local. El reconocimiento de voz funciona en este equipo sin enviar el audio a un servidor"
+}

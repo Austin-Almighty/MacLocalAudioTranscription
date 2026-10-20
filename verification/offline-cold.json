@@ -1,0 +1,13 @@
+{
+  "audioSeconds" : 0,
+  "cacheDirectory" : "\/Users\/autsintliao\/claude_workspace\/local_transcription\/build\/manual-checks\/home\/Library\/Caches",
+  "checkedAt" : "2026-10-16T22:57:11Z",
+  "error" : "Error Domain=NSPOSIXErrorDomain Code=1 \"Operation not permitted\" UserInfo={_NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <284A2182-CDBB-4645-98D2-B17DE339B374>.<1>, _kCFStreamErrorDomainKey=1, _kCFStreamErrorCodeKey=1, _NSURLErrorRelatedURLSessionTaskErrorKey=(\n    \"LocalDataTask <284A2182-CDBB-4645-98D2-B17DE339B374>.<1>\"\n), _NSURLErrorNWPathKey=satisfied (Path is satisfied), interface: en0[802.11], ipv4, ipv6, dns, uses wifi, LQM: good}",
+  "isBusy" : false,
+  "isReady" : false,
+  "mode" : "cold",
+  "networkProbeBlocked" : true,
+  "networkProbeError" : "Error Domain=NSPOSIXErrorDomain Code=1 \"Operation not permitted\" UserInfo={_NSURLErrorFailingURLSessionTaskErrorKey=LocalDataTask <183E6EA1-A023-4AAB-B848-4FE85D47CE60>.<1>, _kCFStreamErrorDomainKey=1, _kCFStreamErrorCodeKey=1, _NSURLErrorRelatedURLSessionTaskErrorKey=(\n    \"LocalDataTask <183E6EA1-A023-4AAB-B848-4FE85D47CE60>.<1>\"\n), _NSURLErrorNWPathKey=satisfied (Path is satisfied), interface: en0[802.11], ipv4, ipv6, dns, uses wifi, LQM: good}",
+  "processingSeconds" : 0,
+  "text" : ""
+}

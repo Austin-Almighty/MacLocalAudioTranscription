@@ -1,0 +1,268 @@
+// !$*UTF8*$!
+{
+	archiveVersion = 1;
+	classes = {};
+	objectVersion = 56;
+	objects = {
+
+/* Begin PBXBuildFile section */
+		A00000000000000000000001 /* LocalTranscriptionApp.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000001; };
+		A00000000000000000000002 /* ContentView.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000002; };
+		A00000000000000000000003 /* TranscriptionModel.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000003; };
+		A00000000000000000000004 /* Voz in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000002; };
+		A00000000000000000000005 /* DesertAnt in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000003; };
+		A00000000000000000000006 /* TranscriptionModelTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000006; };
+		A00000000000000000000007 /* CachedVozIntegrationTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000008; };
+		A00000000000000000000008 /* TranscriptDocumentTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000009; };
+		A00000000000000000000009 /* Fixtures in Resources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000A; };
+		A0000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000B; };
+		A0000000000000000000000B /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000C; };
+		A0000000000000000000000C /* AppUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000D; };
+/* End PBXBuildFile section */
+
+/* Begin PBXContainerItemProxy section */
+		C00000000000000000000001 = {
+			isa = PBXContainerItemProxy;
+			containerPortal = F00000000000000000000001;
+			proxyType = 1;
+			remoteGlobalIDString = F00000000000000000000002;
+			remoteInfo = LocalTranscription;
+		};
+/* End PBXContainerItemProxy section */
+
+/* Begin PBXFileReference section */
+		B00000000000000000000001 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LocalTranscriptionApp.swift; sourceTree = "<group>"; };
+		B00000000000000000000002 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = ContentView.swift; sourceTree = "<group>"; };
+		B00000000000000000000003 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionModel.swift; sourceTree = "<group>"; };
+		B00000000000000000000004 = {isa = PBXFileReference; explicitFileType = wrapper.application; path = LocalTranscription.app; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00000000000000000000005 = {isa = PBXFileReference; lastKnownFileType = text.plist.entitlements; path = LocalTranscription.entitlements; sourceTree = "<group>"; };
+		B00000000000000000000006 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptionModelTests.swift; sourceTree = "<group>"; };
+		B00000000000000000000007 = {isa = PBXFileReference; explicitFileType = wrapper.cfbundle; path = LocalTranscriptionTests.xctest; sourceTree = BUILT_PRODUCTS_DIR; };
+		B00000000000000000000008 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = CachedVozIntegrationTests.swift; sourceTree = "<group>"; };
+		B00000000000000000000009 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = TranscriptDocumentTests.swift; sourceTree = "<group>"; };
+		B0000000000000000000000A = {isa = PBXFileReference; lastKnownFileType = folder; path = Fixtures; sourceTree = "<group>"; };
+		B0000000000000000000000B = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
+		B0000000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
+		B0000000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdaterTests.swift; sourceTree = "<group>"; };
+/* End PBXFileReference section */
+
+/* Begin PBXFrameworksBuildPhase section */
+		E00000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000004, A00000000000000000000005); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXFrameworksBuildPhase section */
+
+/* Begin PBXGroup section */
+		700000000000000000000001 = {
+			isa = PBXGroup;
+			children = (700000000000000000000002, 700000000000000000000004, 700000000000000000000003);
+			sourceTree = "<group>";
+		};
+		700000000000000000000002 = {
+			isa = PBXGroup;
+			children = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B00000000000000000000005, B0000000000000000000000B, B0000000000000000000000C);
+			path = LocalTranscription;
+			sourceTree = "<group>";
+		};
+		700000000000000000000003 = {isa = PBXGroup; children = (B00000000000000000000004, B00000000000000000000007); name = Products; sourceTree = "<group>"; };
+		700000000000000000000004 = {isa = PBXGroup; children = (B00000000000000000000006, B00000000000000000000008, B00000000000000000000009, B0000000000000000000000A, B0000000000000000000000D); path = LocalTranscriptionTests; sourceTree = "<group>"; };
+/* End PBXGroup section */
+
+/* Begin PBXNativeTarget section */
+		F00000000000000000000002 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 800000000000000000000002;
+			buildPhases = (E00000000000000000000003, E00000000000000000000001, E00000000000000000000005);
+			buildRules = ();
+			dependencies = ();
+			name = LocalTranscription;
+			packageProductDependencies = (D00000000000000000000002, D00000000000000000000003);
+			productName = LocalTranscription;
+			productReference = B00000000000000000000004;
+			productType = "com.apple.product-type.application";
+		};
+		F00000000000000000000003 = {
+			isa = PBXNativeTarget;
+			buildConfigurationList = 800000000000000000000003;
+			buildPhases = (E00000000000000000000004, E00000000000000000000002, E00000000000000000000006);
+			buildRules = ();
+			dependencies = (C00000000000000000000002);
+			name = LocalTranscriptionTests;
+			productName = LocalTranscriptionTests;
+			productReference = B00000000000000000000007;
+			productType = "com.apple.product-type.bundle.unit-test";
+		};
+/* End PBXNativeTarget section */
+
+/* Begin PBXProject section */
+		F00000000000000000000001 = {
+			isa = PBXProject;
+			attributes = {
+				BuildIndependentTargetsInParallel = YES;
+				LastSwiftUpdateCheck = 2600;
+				LastUpgradeCheck = 2600;
+				TargetAttributes = {
+					F00000000000000000000002 = {CreatedOnToolsVersion = 26.0; };
+					F00000000000000000000003 = {CreatedOnToolsVersion = 26.0; TestTargetID = F00000000000000000000002; };
+				};
+			};
+			buildConfigurationList = 800000000000000000000001;
+			compatibilityVersion = "Xcode 14.0";
+			developmentRegion = en;
+			hasScannedForEncodings = 0;
+			knownRegions = (en, Base);
+			mainGroup = 700000000000000000000001;
+			packageReferences = (D00000000000000000000001);
+			productRefGroup = 700000000000000000000003;
+			projectDirPath = "";
+			projectRoot = "";
+			targets = (F00000000000000000000002, F00000000000000000000003);
+		};
+/* End PBXProject section */
+
+/* Begin PBXResourcesBuildPhase section */
+		E00000000000000000000005 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A0000000000000000000000A); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000006 = {isa = PBXResourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000009); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXResourcesBuildPhase section */
+
+/* Begin PBXSourcesBuildPhase section */
+		E00000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A0000000000000000000000B); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A0000000000000000000000C); runOnlyForDeploymentPostprocessing = 0; };
+/* End PBXSourcesBuildPhase section */
+
+/* Begin PBXTargetDependency section */
+		C00000000000000000000002 = {isa = PBXTargetDependency; target = F00000000000000000000002; targetProxy = C00000000000000000000001; };
+/* End PBXTargetDependency section */
+
+/* Begin XCBuildConfiguration section */
+		900000000000000000000001 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = dwarf;
+				ENABLE_TESTABILITY = YES;
+				GCC_PREPROCESSOR_DEFINITIONS = ("DEBUG=1", "$(inherited)");
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				ONLY_ACTIVE_ARCH = YES;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_ACTIVE_COMPILATION_CONDITIONS = "DEBUG $(inherited)";
+				SWIFT_OPTIMIZATION_LEVEL = "-Onone";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Debug;
+		};
+		900000000000000000000002 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				CLANG_ENABLE_MODULES = YES;
+				DEBUG_INFORMATION_FORMAT = "dwarf-with-dsym";
+				IPHONEOS_DEPLOYMENT_TARGET = 18.0;
+				MACOSX_DEPLOYMENT_TARGET = 15.0;
+				SDKROOT = auto;
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SWIFT_COMPILATION_MODE = wholemodule;
+				SWIFT_OPTIMIZATION_LEVEL = "-O";
+				SWIFT_STRICT_CONCURRENCY = complete;
+				SWIFT_VERSION = 6.0;
+			};
+			name = Release;
+		};
+		900000000000000000000003 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = LocalTranscription/LocalTranscription.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Local Transcription";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LocalTranscription;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Debug;
+		};
+		900000000000000000000004 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				ASSETCATALOG_COMPILER_APPICON_NAME = AppIcon;
+				"CODE_SIGN_ENTITLEMENTS[sdk=macosx*]" = LocalTranscription/LocalTranscription.entitlements;
+				CODE_SIGN_STYLE = Automatic;
+				COMBINE_HIDPI_IMAGES = YES;
+				CURRENT_PROJECT_VERSION = 1;
+				ENABLE_HARDENED_RUNTIME = YES;
+				GENERATE_INFOPLIST_FILE = YES;
+				INFOPLIST_KEY_CFBundleDisplayName = "Local Transcription";
+				INFOPLIST_KEY_LSApplicationCategoryType = "public.app-category.productivity";
+				INFOPLIST_KEY_UILaunchScreen_Generation = YES;
+				INFOPLIST_KEY_UIApplicationSceneManifest_Generation = YES;
+				MARKETING_VERSION = 1.0;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LocalTranscription;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				SUPPORTED_PLATFORMS = "iphoneos iphonesimulator macosx";
+				SUPPORTS_MACCATALYST = NO;
+				TARGETED_DEVICE_FAMILY = "1,2";
+			};
+			name = Release;
+		};
+		900000000000000000000005 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LocalTranscriptionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LocalTranscription.app/LocalTranscription";
+				"TEST_HOST[sdk=macosx*]" = "$(BUILT_PRODUCTS_DIR)/LocalTranscription.app/Contents/MacOS/LocalTranscription";
+			};
+			name = Debug;
+		};
+		900000000000000000000006 = {
+			isa = XCBuildConfiguration;
+			buildSettings = {
+				BUNDLE_LOADER = "$(TEST_HOST)";
+				CODE_SIGN_STYLE = Automatic;
+				GENERATE_INFOPLIST_FILE = YES;
+				PRODUCT_BUNDLE_IDENTIFIER = com.example.LocalTranscriptionTests;
+				PRODUCT_NAME = "$(TARGET_NAME)";
+				TARGETED_DEVICE_FAMILY = "1,2";
+				TEST_HOST = "$(BUILT_PRODUCTS_DIR)/LocalTranscription.app/LocalTranscription";
+				"TEST_HOST[sdk=macosx*]" = "$(BUILT_PRODUCTS_DIR)/LocalTranscription.app/Contents/MacOS/LocalTranscription";
+			};
+			name = Release;
+		};
+/* End XCBuildConfiguration section */
+
+/* Begin XCConfigurationList section */
+		800000000000000000000001 = {isa = XCConfigurationList; buildConfigurations = (900000000000000000000001, 900000000000000000000002); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		800000000000000000000002 = {isa = XCConfigurationList; buildConfigurations = (900000000000000000000003, 900000000000000000000004); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+		800000000000000000000003 = {isa = XCConfigurationList; buildConfigurations = (900000000000000000000005, 900000000000000000000006); defaultConfigurationIsVisible = 0; defaultConfigurationName = Release; };
+/* End XCConfigurationList section */
+
+/* Begin XCRemoteSwiftPackageReference section */
+		D00000000000000000000001 = {
+			isa = XCRemoteSwiftPackageReference;
+			repositoryURL = "https://github.com/Desert-Ant-Labs/desert-ant-core.git";
+			requirement = {kind = upToNextMajorVersion; minimumVersion = 4.0.0; };
+		};
+/* End XCRemoteSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		D00000000000000000000002 = {isa = XCSwiftPackageProductDependency; package = D00000000000000000000001; productName = Voz; };
+		D00000000000000000000003 = {isa = XCSwiftPackageProductDependency; package = D00000000000000000000001; productName = DesertAnt; };
+/* End XCSwiftPackageProductDependency section */
+	};
+	rootObject = F00000000000000000000001;
+}
