@@ -2,7 +2,7 @@ import Foundation
 import UniformTypeIdentifiers
 import Voz
 
-struct SubtitleCue: Equatable, Sendable {
+struct SubtitleCue: Codable, Equatable, Sendable {
     let start: TimeInterval
     let end: TimeInterval
     let text: String

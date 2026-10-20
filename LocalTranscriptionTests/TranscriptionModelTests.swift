@@ -5,7 +5,7 @@ import Testing
 @MainActor
 struct TranscriptionModelTests {
     @Test func startsWithNoTranscriptOrError() {
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(history: .temporary())
         #expect(model.transcript.isEmpty)
         #expect(model.fileName.isEmpty)
         #expect(model.audioDuration == nil)
@@ -17,7 +17,7 @@ struct TranscriptionModelTests {
 
     @Test(arguments: ["https://example.com/audio.wav", "http://example.com/audio.wav", "ftp://example.com/audio.wav"])
     func rejectsRemoteAudioWithoutLoadingTheModel(address: String) async throws {
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(history: .temporary())
         await model.transcribe(try #require(URL(string: address)))
         #expect(model.errorMessage != nil)
         #expect(!model.isBusy)
@@ -27,7 +27,7 @@ struct TranscriptionModelTests {
     }
 
     @Test func rejectsMissingFilesAndAllowsRetry() async {
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(history: .temporary())
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         await model.transcribe(missing)
         #expect(model.errorMessage != nil)
@@ -42,7 +42,7 @@ struct TranscriptionModelTests {
     }
 
     @Test func ignoresProgressOutsideATranscription() {
-        let model = TranscriptionModel(recognizers: RecognizerStore())
+        let model = TranscriptionModel(recognizers: RecognizerStore(), history: .temporary())
         model.reportProgress(0.5, for: 0)
         #expect(model.transcriptionProgress == nil)
         #expect(model.progress == nil)
@@ -57,7 +57,7 @@ struct TranscriptionModelTests {
     }
 
     @Test func rejectsDirectoriesAsAudio() async {
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(history: .temporary())
         await model.transcribe(FileManager.default.temporaryDirectory)
         #expect(model.errorMessage != nil)
         #expect(!model.isBusy)

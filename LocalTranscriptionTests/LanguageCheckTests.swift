@@ -91,7 +91,7 @@ struct LanguageWarningFlowTests {
     @Test func asksBeforeLoadingTheModelForUnsupportedSpeech() async throws {
         let chinese = DetectedLanguage(code: "zh", confidence: 0.97, isReliable: true)
         let model = TranscriptionModel(recognizers: RecognizerStore(),
-                                       languages: FakeLanguageIdentifier(result: chinese))
+                                       languages: FakeLanguageIdentifier(result: chinese), history: .temporary())
         let url = try recording()
         defer { try? FileManager.default.removeItem(at: url) }
 
@@ -112,7 +112,7 @@ struct LanguageWarningFlowTests {
     @Test func doesNotCheckFilesThatFailValidation() async {
         let chinese = DetectedLanguage(code: "zh", confidence: 0.97, isReliable: true)
         let model = TranscriptionModel(recognizers: RecognizerStore(),
-                                       languages: FakeLanguageIdentifier(result: chinese))
+                                       languages: FakeLanguageIdentifier(result: chinese), history: .temporary())
         await model.transcribe(FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString))
         #expect(model.languageWarning == nil)
         #expect(model.errorMessage != nil)

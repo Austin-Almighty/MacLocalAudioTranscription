@@ -11,7 +11,7 @@ struct LocalTranscriptionApp: App {
         WindowGroup {
             ContentView()
         }
-        .defaultSize(width: 980, height: 680)
+        .defaultSize(width: 1180, height: 720)
         #if os(macOS)
         .windowToolbarStyle(.unified)
         .commands {

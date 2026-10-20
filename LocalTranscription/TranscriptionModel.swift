@@ -14,7 +14,10 @@ struct LanguageWarning: Equatable {
 @Observable
 final class TranscriptionModel {
     private static let logger = Logger(subsystem: "LocalTranscription", category: "Language")
+    private static let historyLogger = Logger(subsystem: "LocalTranscription", category: "History")
 
+    /// The history entry this window shows, or nil for a new, unsaved, or empty view.
+    private(set) var selection: UUID?
     private(set) var transcript = ""
     private(set) var cues: [SubtitleCue] = []
     private(set) var detectedLanguage: DetectedLanguage?
@@ -31,10 +34,15 @@ final class TranscriptionModel {
     @ObservationIgnored private let recognizers: RecognizerStore
     @ObservationIgnored private let languages: any LanguageIdentifying
     @ObservationIgnored private var operation = 0
+    @ObservationIgnored private var selectionLoad = 0
+    @ObservationIgnored let history: TranscriptHistory
 
-    init(recognizers: RecognizerStore = .shared, languages: any LanguageIdentifying = EarLanguageIdentifier.shared) {
+    init(recognizers: RecognizerStore = .shared,
+         languages: any LanguageIdentifying = EarLanguageIdentifier.shared,
+         history: TranscriptHistory = .shared) {
         self.recognizers = recognizers
         self.languages = languages
+        self.history = history
     }
 
     var isBusy: Bool { status != nil }
@@ -129,9 +137,85 @@ final class TranscriptionModel {
             fileName = url.lastPathComponent
             audioDuration = result.duration
             processingTime = result.processingTime
+            saveToHistory()
         } catch {
             errorMessage = error.localizedDescription
         }
+    }
+
+    /// Saves the transcript just shown. On failure the transcript stays on screen, unsaved.
+    private func saveToHistory() {
+        let entry = HistoryEntry(id: UUID(), fileName: fileName, date: .now,
+                                 audioDuration: audioDuration ?? 0, processingTime: processingTime ?? 0,
+                                 language: detectedLanguage)
+        selectionLoad += 1
+        do {
+            try history.save(entry, TranscriptRecord(transcript: transcript, cues: cues))
+            selection = entry.id
+        } catch {
+            selection = nil
+            Self.historyLogger.error("Couldn’t save transcript: \(error.localizedDescription, privacy: .public)")
+            errorMessage = "The transcript couldn’t be saved to history: \(error.localizedDescription)"
+        }
+    }
+
+    /// Shows a saved transcript, or the empty view for nil.
+    func select(_ id: UUID?) async {
+        selectionLoad += 1
+        let current = selectionLoad
+        guard let id, let entry = history.entries.first(where: { $0.id == id }) else {
+            show(nil, nil)
+            return
+        }
+        selection = id
+        do {
+            let record = try await history.record(for: id)
+            // A later selection wins over a slower earlier load.
+            guard current == selectionLoad else { return }
+            show(entry, record)
+        } catch {
+            guard current == selectionLoad else { return }
+            Self.historyLogger.error("Couldn’t open saved transcript: \(error.localizedDescription, privacy: .public)")
+            show(nil, nil)
+            errorMessage = "The saved transcript couldn’t be opened: \(error.localizedDescription)"
+        }
+    }
+
+    func deleteEntry(_ id: UUID) {
+        do {
+            try history.delete(id)
+        } catch {
+            Self.historyLogger.error("Couldn’t delete transcript: \(error.localizedDescription, privacy: .public)")
+            errorMessage = "The transcript couldn’t be deleted: \(error.localizedDescription)"
+        }
+        reconcileWithHistory()
+    }
+
+    func clearHistory() {
+        do {
+            try history.deleteAll()
+        } catch {
+            Self.historyLogger.error("Couldn’t clear history: \(error.localizedDescription, privacy: .public)")
+            errorMessage = "History couldn’t be cleared completely: \(error.localizedDescription)"
+        }
+        reconcileWithHistory()
+    }
+
+    /// Returns to the empty view when the shown entry was deleted, including from another window.
+    func reconcileWithHistory() {
+        guard let selection, !history.entries.contains(where: { $0.id == selection }) else { return }
+        selectionLoad += 1
+        show(nil, nil)
+    }
+
+    private func show(_ entry: HistoryEntry?, _ record: TranscriptRecord?) {
+        selection = entry?.id
+        transcript = record?.transcript ?? ""
+        cues = record?.cues ?? []
+        detectedLanguage = entry?.language
+        fileName = entry?.fileName ?? ""
+        audioDuration = entry?.audioDuration
+        processingTime = entry?.processingTime
     }
 
     func reportProgress(_ fraction: Double, for operation: Int) {

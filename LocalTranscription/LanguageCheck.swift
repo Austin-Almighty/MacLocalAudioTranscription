@@ -5,7 +5,7 @@ import os
 import Voz
 
 /// The spoken language Ear heard in a recording.
-struct DetectedLanguage: Equatable, Sendable {
+struct DetectedLanguage: Codable, Equatable, Sendable {
     let code: String
     let confidence: Double
     let isReliable: Bool

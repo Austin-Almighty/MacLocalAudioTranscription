@@ -19,7 +19,10 @@ struct ContentView: View {
     #endif
 
     var body: some View {
-        NavigationStack {
+        NavigationSplitView {
+            HistorySidebar(model: model, isImporting: $isImporting)
+                .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
+        } detail: {
             recordingContent
                 .safeAreaInset(edge: .bottom, spacing: 0) { statusBar }
                 .navigationTitle(model.fileName.isEmpty ? "Local Transcription" : model.fileName)
@@ -67,13 +70,16 @@ struct ContentView: View {
                 }
         }
         #if os(macOS)
-        .frame(minWidth: 760, minHeight: 480)
+        // Wide enough for the history list, the transcript, and Recording Info side by side.
+        .frame(minWidth: 980, minHeight: 480)
         #else
         .frame(minWidth: 300, minHeight: 420)
         #endif
         .task {
+            await model.history.load()
             if model.modelIsDownloaded { await model.prepare() }
         }
+        .onChange(of: model.history.entries) { model.reconcileWithHistory() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.audio]) { result in
             switch result {
             case .success(let url):
@@ -120,7 +126,7 @@ struct ContentView: View {
                 ContentUnavailableView {
                     Label("No Recording", systemImage: "waveform")
                 } description: {
-                    Text("Import an audio recording to create a transcript on your device.")
+                    Text("Import an audio recording to create a transcript on your device, or choose one from History.")
                 } actions: {
                     Button("Import Audio…") { isImporting = true }
                         .buttonStyle(.borderedProminent)
