@@ -7,6 +7,11 @@ app_path=dist/LocalTranscription.app
 archive_path=dist/LocalTranscription-macOS-arm64.zip
 test -x "$app_path/Contents/MacOS/LocalTranscription"
 codesign --verify --strict "$app_path"
+# Refuse ad hoc or unnotarized builds: Gatekeeper would block them on other Macs.
+if ! spctl --assess --type execute "$app_path" 2>/dev/null || ! xcrun stapler validate -q "$app_path" 2>/dev/null; then
+  print -u2 "Error: $app_path is not Developer ID signed, notarized, and stapled. Sign, notarize, and staple it before packaging a release."
+  exit 1
+fi
 test "$(lipo -archs "$app_path/Contents/MacOS/LocalTranscription")" = arm64
 release_version=$(/usr/libexec/PlistBuddy -c 'Print :CFBundleShortVersionString' "$app_path/Contents/Info.plist")
 [[ "$release_version" =~ '^[0-9]+(\.[0-9]+){0,2}$' ]]

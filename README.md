@@ -50,7 +50,7 @@ To prepare an official release:
 
 1. Set `MARKETING_VERSION` in both app build configurations to the new numeric version, such as `1.1.0`, and increment `CURRENT_PROJECT_VERSION`. Use one to three numeric version components.
 2. Run the regression suite and `zsh Scripts/build-mac.sh`. For public distribution, sign with Developer ID, notarize, and staple the finished app before packaging. The local build script provides only an ad hoc signature.
-3. Run `zsh Scripts/package-release.sh`. It packages the finished app into `dist/LocalTranscription-macOS-arm64.zip` and writes `Casks/local-transcription.rb` with the archive’s SHA-256, following the [Homebrew cask format](https://docs.brew.sh/Cask-Cookbook). Upload that exact ZIP; do not rebuild or repackage it afterward.
+3. Run `zsh Scripts/package-release.sh`. It refuses apps that Gatekeeper rejects or that lack a stapled notarization ticket, including the ad hoc build from `Scripts/build-mac.sh`. It packages the finished app into `dist/LocalTranscription-macOS-arm64.zip` and writes `Casks/local-transcription.rb` with the archive’s SHA-256, following the [Homebrew cask format](https://docs.brew.sh/Cask-Cookbook). Upload that exact ZIP; do not rebuild or repackage it afterward.
 4. Commit the source changes, create a GitHub release tagged `v` followed by that exact version, and upload the ZIP. Keep it a draft while uploading, then publish it as the latest stable release. Publish the generated cask on `main` after the release download is available, so Homebrew’s version and checksum stay in sync.
 
 Preparing a ZIP or cask does not publish an official release. The update check begins offering it only after the stable release and its download are available on GitHub.
