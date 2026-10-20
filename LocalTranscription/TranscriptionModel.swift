@@ -28,9 +28,10 @@ final class TranscriptionModel {
 
     /// Completed fraction of the current download or transcription, or nil when it can’t be measured.
     var progress: Double? {
-        // After the download, preparing for the Neural Engine has no measurable progress.
-        if let download = recognizers.downloadProgress { return download < 1 ? download : nil }
-        return transcriptionProgress
+        // After the download, preparing for the Neural Engine has no measurable progress. Voz also
+        // reports full transcription progress well before decoding finishes, so show a spinner then.
+        let current = recognizers.downloadProgress ?? transcriptionProgress
+        return current.flatMap { $0 < 1 ? $0 : nil }
     }
 
     func prepare() async {
