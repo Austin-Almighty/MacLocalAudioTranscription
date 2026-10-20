@@ -65,6 +65,11 @@ enum Subtitles {
         return String(format: "%02d:%02d:%02d%@%03d", hours, minutes, secs, separator, millis)
     }
 
+    /// Lays out cue text on at most two lines when it fits, otherwise on one, never dropping words.
+    static func layout(_ text: String) -> String {
+        wrapped(text) ?? text
+    }
+
     private static func endsSentence(_ word: String) -> Bool {
         guard let last = word.last else { return false }
         return ".?!…".contains(last)

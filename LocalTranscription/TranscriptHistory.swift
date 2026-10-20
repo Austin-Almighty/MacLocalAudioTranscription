@@ -14,6 +14,8 @@ struct HistoryEntry: Codable, Identifiable, Equatable, Sendable {
     let audioDuration: TimeInterval
     let processingTime: TimeInterval
     let language: DetectedLanguage?
+    /// When the transcript was last edited, or nil if it is as transcribed.
+    var edited: Date?
 }
 
 /// The full text and timed cues of one transcription.
@@ -79,10 +81,35 @@ final class TranscriptHistory {
         }.value
     }
 
+    /// Saves an edited transcript. The first edit keeps a copy of the transcript as transcribed,
+    /// so it can be restored.
+    func update(_ id: UUID, _ record: TranscriptRecord, editedAt date: Date) throws {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { throw CocoaError(.fileNoSuchFile) }
+        if !FileManager.default.fileExists(atPath: originalURL(id).path) {
+            try FileManager.default.copyItem(at: recordURL(id), to: originalURL(id))
+        }
+        try JSONEncoder().encode(record).write(to: recordURL(id), options: .atomic)
+        var entry = entries[index]
+        entry.edited = date
+        try JSONEncoder().encode(entry).write(to: entryURL(id), options: .atomic)
+        entries[index] = entry
+    }
+
+    /// Restores the transcript as transcribed and returns it.
+    func revert(_ id: UUID) async throws -> TranscriptRecord {
+        guard let index = entries.firstIndex(where: { $0.id == id }) else { throw CocoaError(.fileNoSuchFile) }
+        _ = try FileManager.default.replaceItemAt(recordURL(id), withItemAt: originalURL(id))
+        var entry = entries[index]
+        entry.edited = nil
+        try JSONEncoder().encode(entry).write(to: entryURL(id), options: .atomic)
+        entries[index] = entry
+        return try await record(for: id)
+    }
+
     func delete(_ id: UUID) throws {
-        // Remove the transcript before its summary: if the second removal fails, the entry stays
+        // Remove the transcripts before the summary: if a later removal fails, the entry stays
         // listed and can be deleted again, rather than leaving transcript text the list can’t show.
-        for url in [recordURL(id), entryURL(id)] where FileManager.default.fileExists(atPath: url.path) {
+        for url in [recordURL(id), originalURL(id), entryURL(id)] where FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
         entries.removeAll { $0.id == id }
@@ -112,6 +139,8 @@ final class TranscriptHistory {
 
     private func entryURL(_ id: UUID) -> URL { directory.appending(path: "\(id.uuidString).json") }
     private func recordURL(_ id: UUID) -> URL { directory.appending(path: "\(id.uuidString).transcript.json") }
+    // Ends in .transcript.json so loading never mistakes it for a summary.
+    private func originalURL(_ id: UUID) -> URL { directory.appending(path: "\(id.uuidString).original.transcript.json") }
 
     /// Unreadable entries are skipped and logged, not deleted, so a newer format or a damaged
     /// file can still be recovered by hand. Only Clear History removes them.

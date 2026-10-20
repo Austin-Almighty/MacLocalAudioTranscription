@@ -29,6 +29,10 @@ final class TranscriptionModel {
     private(set) var modelIsDownloaded = Voz.isDownloaded()
     private(set) var audioDuration: TimeInterval?
     private(set) var processingTime: TimeInterval?
+    /// When the shown transcript was last edited, or nil if it is as transcribed.
+    private(set) var editedDate: Date?
+    /// The text being edited, or nil when not editing.
+    private(set) var draft: String?
     private(set) var transcriptionProgress: Double?
     var errorMessage: String?
 
@@ -38,6 +42,9 @@ final class TranscriptionModel {
     @ObservationIgnored private var selectionLoad = 0
     @ObservationIgnored private var isProcessingQueue = false
     @ObservationIgnored private var preparing: Task<Void, Never>?
+    // The entry being edited, kept apart from `selection`, which a finishing transcription moves.
+    @ObservationIgnored private var editingID: UUID?
+    @ObservationIgnored private var autosave: Task<Void, Never>?
     private var queue: [QueuedFile] = []
     @ObservationIgnored let history: TranscriptHistory
 
@@ -203,12 +210,15 @@ final class TranscriptionModel {
                     self?.reportProgress(progress.fractionCompleted, for: current)
                 }
             }
+            // Save any edits to the entry they belong to before the new result replaces it.
+            endEditing()
             transcript = result.text
             cues = Subtitles.cues(from: result.words)
             detectedLanguage = language
             fileName = url.lastPathComponent
             audioDuration = result.duration
             processingTime = result.processingTime
+            editedDate = nil
             saveToHistory()
             prepareLanguageCheck()
         } catch {
@@ -240,6 +250,7 @@ final class TranscriptionModel {
     /// Shows a saved transcript, or the empty view for nil. Ignored while busy, because the
     /// running transcription will replace whatever is shown when it finishes.
     func select(_ id: UUID?) async {
+        endEditing()
         guard !isBusy else { return }
         selectionLoad += 1
         let current = selectionLoad
@@ -283,9 +294,98 @@ final class TranscriptionModel {
 
     /// Returns to the empty view when the shown entry was deleted, including from another window.
     func reconcileWithHistory() {
-        guard let selection, !history.entries.contains(where: { $0.id == selection }) else { return }
-        selectionLoad += 1
-        show(nil, nil)
+        if let editingID, !history.entries.contains(where: { $0.id == editingID }) {
+            // The entry being edited was deleted, so its draft has nowhere to go.
+            autosave?.cancel()
+            draft = nil
+            self.editingID = nil
+        }
+        guard let selection else { return }
+        guard let entry = history.entries.first(where: { $0.id == selection }) else {
+            selectionLoad += 1
+            show(nil, nil)
+            return
+        }
+        // Another window edited or reverted this entry: show its version, unless editing here.
+        if entry.edited != editedDate, !isEditing {
+            selectionLoad += 1
+            let current = selectionLoad
+            Task {
+                do {
+                    let record = try await history.record(for: selection)
+                    guard current == selectionLoad else { return }
+                    show(entry, record)
+                } catch {
+                    Self.historyLogger.error("Couldn’t reload edited transcript: \(error.localizedDescription, privacy: .public)")
+                }
+            }
+        }
+    }
+
+    // MARK: Editing
+
+    var isEditing: Bool { draft != nil }
+    /// Only saved transcripts can be edited, because edits are saved to history.
+    var canEdit: Bool { selection != nil }
+
+    func beginEditing() {
+        guard let selection, draft == nil else { return }
+        editingID = selection
+        draft = transcript
+    }
+
+    func updateDraft(_ text: String) {
+        guard draft != nil else { return }
+        draft = text
+        autosave?.cancel()
+        autosave = Task { [weak self] in
+            do {
+                try await Task.sleep(for: .seconds(1))
+            } catch {
+                return  // Cancelled by newer typing or an explicit save.
+            }
+            self?.saveDraft()
+        }
+    }
+
+    /// Saves the draft, keeping editing open. Subtitle cues keep their timings.
+    func saveDraft() {
+        autosave?.cancel()
+        guard let draft, let id = editingID, draft != transcript else { return }
+        let edited = CueAlignment.realign(cues, to: draft)
+        let now = Date.now
+        do {
+            try history.update(id, TranscriptRecord(transcript: draft, cues: edited), editedAt: now)
+            transcript = draft
+            cues = edited
+            editedDate = now
+        } catch {
+            Self.historyLogger.error("Couldn’t save edits: \(error.localizedDescription, privacy: .public)")
+            appendError("Your edits to “\(fileName)” couldn’t be saved. \(error.localizedDescription)")
+        }
+    }
+
+    /// Saves the draft and leaves editing.
+    func endEditing() {
+        guard isEditing else { return }
+        saveDraft()
+        draft = nil
+        editingID = nil
+    }
+
+    /// Restores the shown transcript as it was transcribed.
+    func revertToOriginal() async {
+        endEditing()
+        guard let id = selection else { return }
+        do {
+            let record = try await history.revert(id)
+            guard selection == id, let entry = history.entries.first(where: { $0.id == id }) else { return }
+            selectionLoad += 1
+            show(entry, record)
+        } catch {
+            Self.historyLogger.error("Couldn’t revert transcript: \(error.localizedDescription, privacy: .public)")
+            appendError("The original transcript couldn’t be restored. \(error.localizedDescription)")
+        }
     }
 
     private func show(_ entry: HistoryEntry?, _ record: TranscriptRecord?) {
@@ -296,6 +396,7 @@ final class TranscriptionModel {
         fileName = entry?.fileName ?? ""
         audioDuration = entry?.audioDuration
         processingTime = entry?.processingTime
+        editedDate = entry?.edited
     }
 
     func reportProgress(_ fraction: Double, for operation: Int) {

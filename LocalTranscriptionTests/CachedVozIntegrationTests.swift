@@ -45,6 +45,23 @@ final class CachedVozIntegrationTests {
         #expect(record == TranscriptRecord(transcript: model.transcript, cues: model.cues))
     }
 
+    @Test func aResultArrivingMidEditSavesTheDraftToItsOwnEntry() async throws {
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier(), history: history)
+        await model.transcribe(try fixture("aiff"))
+        let edited = try #require(model.selection)
+        model.beginEditing()
+        model.updateDraft("Edited before the next recording finished.")
+
+        await model.transcribe(try fixture("wav"))
+        #expect(!model.isEditing)
+        #expect(model.fileName == "speech.wav")
+        #expect(model.editedDate == nil)
+        #expect(model.transcript.contains("quick brown fox"))
+        #expect(try await history.record(for: edited).transcript == "Edited before the next recording finished.")
+        #expect(history.entries.first(where: { $0.id == edited })?.edited != nil)
+        #expect(try await history.record(for: try #require(model.selection)).transcript == model.transcript)
+    }
+
     @Test func doesNotSaveRecordingsWithoutSpeech() async throws {
         let silence = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
         defer { try? FileManager.default.removeItem(at: silence) }

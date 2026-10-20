@@ -14,6 +14,7 @@ struct ContentView: View {
     // On iPhone the list is shown first; an import switches to the transcript so its progress shows.
     @State private var preferredColumn = NavigationSplitViewColumn.sidebar
     @State private var isDropTargeted = false
+    @State private var isConfirmingRevert = false
     #if os(macOS)
     @State private var showingInspector = true
     @AppStorage("transcriptTextScale") private var transcriptTextScale = 1.0
@@ -39,8 +40,14 @@ struct ContentView: View {
                         ToolbarSpacer(.fixed, placement: .primaryAction)
                     }
                     ToolbarItemGroup(placement: .primaryAction) {
+                        Button(model.isEditing ? "Done" : "Edit", systemImage: model.isEditing ? "checkmark" : "pencil") {
+                            if model.isEditing { model.endEditing() } else { model.beginEditing() }
+                        }
+                        .help(model.isEditing ? "Save your edits" : "Edit the transcript")
+                        .disabled(!model.canEdit)
                         #if os(macOS)
                         Button("Copy Transcript", systemImage: "doc.on.doc") {
+                            model.saveDraft()
                             NSPasteboard.general.clearContents()
                             NSPasteboard.general.setString(model.transcript, forType: .string)
                         }
@@ -83,6 +90,8 @@ struct ContentView: View {
             if model.modelIsDownloaded { await model.prepare() }
         }
         .onChange(of: model.history.entries) { model.reconcileWithHistory() }
+        // Closing the window saves any edits in progress.
+        .onDisappear { model.endEditing() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.audio],
                       allowsMultipleSelection: true) { result in
             switch result {
@@ -147,6 +156,7 @@ struct ContentView: View {
 
     private func export(_ format: TranscriptFormat) {
         // Render once here; rendering in body would re-format long subtitles on every progress update.
+        model.saveDraft()
         exportFormat = format
         exportDocument = TranscriptDocument(text: format.render(transcript: model.transcript, cues: model.cues))
         isExporting = true
@@ -164,6 +174,8 @@ struct ContentView: View {
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
                 }
+            } else if model.isEditing {
+                transcriptEditor
             } else {
                 ScrollView {
                     VStack(alignment: .leading, spacing: 24) {
@@ -198,6 +210,27 @@ struct ContentView: View {
     private var languageDescription: String {
         guard let language = model.detectedLanguage else { return "Not identified" }
         return language.isReliable ? language.name : "\(language.name) (uncertain)"
+    }
+
+    // Not inside the transcript’s ScrollView, and never given an .id that autosave would change,
+    // so the cursor and undo history survive saving.
+    private var transcriptEditor: some View {
+        VStack(alignment: .leading, spacing: 12) {
+            Text("Editing Transcript")
+                .font(.title2.weight(.semibold))
+                .accessibilityAddTraits(.isHeader)
+            TextEditor(text: Binding(get: { model.draft ?? "" }, set: { model.updateDraft($0) }))
+                .font(transcriptFont)
+                .lineSpacing(6)
+                .scrollContentBackground(.hidden)
+                .accessibilityLabel("Transcript")
+            Text("Edits save automatically. Subtitle timings are kept.")
+                .font(.caption)
+                .foregroundStyle(.secondary)
+        }
+        .frame(maxWidth: 720, alignment: .leading)
+        .padding(40)
+        .frame(maxWidth: .infinity)
     }
 
     private var transcriptFont: Font {
@@ -286,6 +319,10 @@ struct ContentView: View {
                 if !model.fileName.isEmpty {
                     LabeledContent("Language", value: languageDescription)
                 }
+                if let edited = model.editedDate {
+                    LabeledContent("Edited", value: edited.formatted(date: .abbreviated, time: .shortened))
+                    Button("Revert to Original…") { isConfirmingRevert = true }
+                }
                 if let time = model.processingTime {
                     LabeledContent("Processing", value: String(format: "%.2f seconds", time))
                 }
@@ -324,6 +361,12 @@ struct ContentView: View {
         .id(model.fileName)
         .id(model.isReady)
         .id(model.processingTime)
+        .id(model.editedDate)
+        .confirmationDialog("Revert to the original transcript?", isPresented: $isConfirmingRevert) {
+            Button("Revert", role: .destructive) { Task { await model.revertToOriginal() } }
+        } message: {
+            Text("Your edits to this transcript will be replaced by the text as it was transcribed.")
+        }
     }
 }
 
