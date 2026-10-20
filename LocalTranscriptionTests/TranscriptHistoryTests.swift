@@ -84,6 +84,32 @@ final class TranscriptHistoryTests {
         #expect(try jsonFiles().contains("\(future.id.uuidString).json"))
     }
 
+    @Test func clearingHistoryRemovesFilesThatCouldNotBeListed() async throws {
+        let good = entry("good.wav", at: 1_000)
+        try history.save(good, unicodeRecord)
+        var future = entry("future.wav", at: 2_000)
+        future.version = HistoryEntry.currentVersion + 1
+        try JSONEncoder().encode(future).write(to: directory.appending(path: "\(future.id.uuidString).json"))
+        try JSONEncoder().encode(unicodeRecord).write(to: directory.appending(path: "\(UUID().uuidString).transcript.json"))
+        try Data("not JSON".utf8).write(to: directory.appending(path: "damaged.json"))
+
+        let reopened = TranscriptHistory(directory: directory)
+        await reopened.load()
+        try reopened.deleteAll()
+        #expect(reopened.entries.isEmpty)
+        #expect(try jsonFiles().isEmpty)
+    }
+
+    @Test func aFailedSaveLeavesNoTranscriptBehind() throws {
+        let blocked = entry("blocked.wav", at: 1_000)
+        // A folder where the summary file belongs makes writing the summary fail.
+        try FileManager.default.createDirectory(at: directory.appending(path: "\(blocked.id.uuidString).json"),
+                                                withIntermediateDirectories: true)
+        #expect(throws: (any Error).self) { try self.history.save(blocked, unicodeRecord) }
+        #expect(history.entries.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(blocked.id.uuidString).transcript.json").path))
+    }
+
     @Test func startsEmptyBeforeAnythingIsSaved() async {
         await history.load()
         #expect(history.entries.isEmpty)

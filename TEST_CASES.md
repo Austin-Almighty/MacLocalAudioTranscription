@@ -40,6 +40,8 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Language check | Language identification throws | Transcribe normally with no language shown. |
 | History | Save entries with a Unicode file name, cues, and with and without a language, then reopen the store | A new session lists them newest first and reloads each transcript and cue exactly. |
 | History | Delete one entry, then clear history | Both files of a deleted entry are removed; clearing leaves no saved transcripts. |
+| History | Clear history with damaged, newer-format, and orphaned transcript files present; save when the summary can’t be written | Clearing removes every history file; a failed save leaves no transcript file behind. |
+| History | Transcribe three seconds of silence | Nothing is recognized and nothing is saved. |
 | History | Load a folder with a damaged file and an entry from a newer format | Skip both without deleting them; load the rest. Loading before anything is saved creates no folder. |
 | History | Select saved entries, select nothing, and delete the shown entry | Show each entry’s transcript, cues, timings, and language; return to the empty view when nothing is selected or the shown entry is deleted. |
 | History | Delete an entry shown in two windows, and clear history | Every window showing it returns to the empty view; windows showing other entries are unchanged. |

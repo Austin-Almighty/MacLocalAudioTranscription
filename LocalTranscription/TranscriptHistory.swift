@@ -60,9 +60,15 @@ final class TranscriptHistory {
     func save(_ entry: HistoryEntry, _ record: TranscriptRecord) throws {
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         let encoder = JSONEncoder()
-        // Write the transcript first, so a summary never points at a missing transcript.
+        // Write the transcript first, so a summary never points at a missing transcript, and
+        // remove it again if the summary fails, so no transcript is left that the list can’t show.
         try encoder.encode(record).write(to: recordURL(entry.id), options: .atomic)
-        try encoder.encode(entry).write(to: entryURL(entry.id), options: .atomic)
+        do {
+            try encoder.encode(entry).write(to: entryURL(entry.id), options: .atomic)
+        } catch {
+            try? FileManager.default.removeItem(at: recordURL(entry.id))
+            throw error
+        }
         entries.insert(entry, at: entries.firstIndex { $0.date <= entry.date } ?? entries.endIndex)
     }
 
@@ -74,21 +80,41 @@ final class TranscriptHistory {
     }
 
     func delete(_ id: UUID) throws {
-        for url in [entryURL(id), recordURL(id)] where FileManager.default.fileExists(atPath: url.path) {
+        // Remove the transcript before its summary: if the second removal fails, the entry stays
+        // listed and can be deleted again, rather than leaving transcript text the list can’t show.
+        for url in [recordURL(id), entryURL(id)] where FileManager.default.fileExists(atPath: url.path) {
             try FileManager.default.removeItem(at: url)
         }
         entries.removeAll { $0.id == id }
     }
 
+    /// Removes every saved transcript file in the folder, including entries that couldn’t be
+    /// listed, so nothing remains after the person clears history.
     func deleteAll() throws {
-        for entry in entries { try delete(entry.id) }
+        let files: [URL]
+        do {
+            files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+        } catch CocoaError.fileReadNoSuchFile {
+            files = []
+        }
+        var firstFailure: (any Error)?
+        for file in files where file.pathExtension == "json" {
+            do {
+                try FileManager.default.removeItem(at: file)
+            } catch {
+                firstFailure = firstFailure ?? error
+            }
+        }
+        let remaining = Set((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+        entries.removeAll { !remaining.contains("\($0.id.uuidString).json") }
+        if let firstFailure { throw firstFailure }
     }
 
     private func entryURL(_ id: UUID) -> URL { directory.appending(path: "\(id.uuidString).json") }
     private func recordURL(_ id: UUID) -> URL { directory.appending(path: "\(id.uuidString).transcript.json") }
 
-    /// Unreadable entries are skipped and logged, never deleted, so a newer format or a damaged
-    /// file can still be recovered by hand.
+    /// Unreadable entries are skipped and logged, not deleted, so a newer format or a damaged
+    /// file can still be recovered by hand. Only Clear History removes them.
     nonisolated private static func readEntries(in directory: URL) -> [HistoryEntry] {
         let files: [URL]
         do {

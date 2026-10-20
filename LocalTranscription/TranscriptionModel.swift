@@ -62,6 +62,7 @@ final class TranscriptionModel {
         defer { status = nil }
         do {
             _ = try await loadModel()
+            prepareLanguageCheck()
         } catch {
             errorMessage = error.localizedDescription
         }
@@ -138,17 +139,23 @@ final class TranscriptionModel {
             audioDuration = result.duration
             processingTime = result.processingTime
             saveToHistory()
+            prepareLanguageCheck()
         } catch {
             errorMessage = error.localizedDescription
         }
     }
 
     /// Saves the transcript just shown. On failure the transcript stays on screen, unsaved.
+    /// Recordings with no recognized speech aren’t saved.
     private func saveToHistory() {
+        selectionLoad += 1
+        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
+            selection = nil
+            return
+        }
         let entry = HistoryEntry(id: UUID(), fileName: fileName, date: .now,
                                  audioDuration: audioDuration ?? 0, processingTime: processingTime ?? 0,
                                  language: detectedLanguage)
-        selectionLoad += 1
         do {
             try history.save(entry, TranscriptRecord(transcript: transcript, cues: cues))
             selection = entry.id
@@ -159,8 +166,10 @@ final class TranscriptionModel {
         }
     }
 
-    /// Shows a saved transcript, or the empty view for nil.
+    /// Shows a saved transcript, or the empty view for nil. Ignored while busy, because the
+    /// running transcription will replace whatever is shown when it finishes.
     func select(_ id: UUID?) async {
+        guard !isBusy else { return }
         selectionLoad += 1
         let current = selectionLoad
         guard let id, let entry = history.entries.first(where: { $0.id == id }) else {
@@ -241,9 +250,14 @@ final class TranscriptionModel {
         let loaded = try await recognizers.recognizer()
         modelIsDownloaded = true
         isReady = true
+        return loaded
+    }
+
+    /// Fetches the language model in the background once Voz is idle, so its download and
+    /// compilation never compete with a transcription that is starting.
+    private func prepareLanguageCheck() {
         let languages = languages
         Task.detached(priority: .utility) { await languages.prepare() }
-        return loaded
     }
 }
 

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import AVFoundation
 import Ear
 import Voz
 @testable import LocalTranscription
@@ -42,6 +43,26 @@ final class CachedVozIntegrationTests {
         #expect(saved.audioDuration == model.audioDuration)
         let record = try await history.record(for: saved.id)
         #expect(record == TranscriptRecord(transcript: model.transcript, cues: model.cues))
+    }
+
+    @Test func doesNotSaveRecordingsWithoutSpeech() async throws {
+        let silence = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".caf")
+        defer { try? FileManager.default.removeItem(at: silence) }
+        let format = try #require(AVAudioFormat(standardFormatWithSampleRate: 16_000, channels: 1))
+        let buffer = try #require(AVAudioPCMBuffer(pcmFormat: format, frameCapacity: 48_000))
+        buffer.frameLength = 48_000
+        do {
+            let file = try AVAudioFile(forWriting: silence, settings: format.settings)
+            try file.write(from: buffer)
+        }
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier(), history: history)
+        await model.transcribe(silence)
+        try #require(model.errorMessage == nil)
+        try #require(model.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+                     "Voz recognized text in silence, so this check doesn’t apply")
+        #expect(model.fileName == silence.lastPathComponent)
+        #expect(history.entries.isEmpty)
+        #expect(model.selection == nil)
     }
 
     @Test func acceptsSpacesAndUnicodeInFileNames() async throws {

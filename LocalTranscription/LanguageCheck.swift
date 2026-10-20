@@ -40,13 +40,31 @@ struct EarLanguageIdentifier: LanguageIdentifying {
         return DetectedLanguage(code: code, confidence: detection.confidence, isReliable: detection.isReliable)
     }
 
+    private let downloads = DownloadGate()
+
     func prepare() async {
         guard !ear.isDownloaded() else { return }
-        do {
-            try await ear.download()
-        } catch {
-            Self.logger.error("Language identification model download failed: \(error.localizedDescription, privacy: .public)")
+        let ear = ear
+        await downloads.run {
+            do {
+                try await ear.download()
+            } catch {
+                Self.logger.error("Language identification model download failed: \(error.localizedDescription, privacy: .public)")
+            }
         }
+    }
+}
+
+/// Runs one download at a time; callers that arrive while it runs wait for it instead of starting another.
+private actor DownloadGate {
+    private var running: Task<Void, Never>?
+
+    func run(_ work: @escaping @Sendable () async -> Void) async {
+        if let running { return await running.value }
+        let task = Task { await work() }
+        running = task
+        await task.value
+        running = nil
     }
 }
 

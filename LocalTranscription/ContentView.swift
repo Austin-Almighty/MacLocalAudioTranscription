@@ -11,6 +11,8 @@ struct ContentView: View {
     @State private var exportFormat = TranscriptFormat.text
     @State private var exportDocument = TranscriptDocument(text: "")
     @AppStorage("showTimestamps") private var showTimestamps = false
+    // On iPhone the list is shown first; an import switches to the transcript so its progress shows.
+    @State private var preferredColumn = NavigationSplitViewColumn.sidebar
     #if os(macOS)
     @State private var showingInspector = true
     @AppStorage("transcriptTextScale") private var transcriptTextScale = 1.0
@@ -19,7 +21,7 @@ struct ContentView: View {
     #endif
 
     var body: some View {
-        NavigationSplitView {
+        NavigationSplitView(preferredCompactColumn: $preferredColumn) {
             HistorySidebar(model: model, isImporting: $isImporting)
                 .navigationSplitViewColumnWidth(min: 200, ideal: 240, max: 320)
         } detail: {
@@ -75,14 +77,16 @@ struct ContentView: View {
         #else
         .frame(minWidth: 300, minHeight: 420)
         #endif
+        // Separate tasks, so loading the model doesn’t wait for history to be read.
+        .task { await model.history.load() }
         .task {
-            await model.history.load()
             if model.modelIsDownloaded { await model.prepare() }
         }
         .onChange(of: model.history.entries) { model.reconcileWithHistory() }
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.audio]) { result in
             switch result {
             case .success(let url):
+                preferredColumn = .detail
                 Task { await model.transcribe(url) }
             case .failure(let error):
                 model.errorMessage = error.localizedDescription
@@ -179,22 +183,20 @@ struct ContentView: View {
 
     private var timedTranscript: some View {
         let pattern: Duration.TimeFormatStyle.Pattern = (model.audioDuration ?? 0) >= 3600 ? .hourMinuteSecond : .minuteSecond
-        return LazyVStack(alignment: .leading, spacing: 12) {
-            ForEach(Array(model.cues.enumerated()), id: \.offset) { _, cue in
-                HStack(alignment: .firstTextBaseline, spacing: 16) {
-                    Text(Duration.seconds(cue.start).formatted(.time(pattern: pattern)))
-                        .font(.callout.monospacedDigit())
-                        .foregroundStyle(.secondary)
-                        .frame(minWidth: 56, alignment: .leading)
-                    Text(cue.text.replacingOccurrences(of: "\n", with: " "))
-                        .font(transcriptFont)
-                        .lineSpacing(6)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                }
-            }
+        // One Text, so a selection can span several cues and copies with their timestamps.
+        let lines = model.cues.map { cue in
+            var time = AttributedString(Duration.seconds(cue.start).formatted(.time(pattern: pattern)) + "  ")
+            time.font = .callout.monospacedDigit()
+            time.foregroundColor = .secondary
+            return time + AttributedString(cue.text.replacingOccurrences(of: "\n", with: " "))
         }
-        .textSelection(.enabled)
-        .id(model.transcript)
+        let text = lines.dropFirst().reduce(lines.first ?? AttributedString()) { $0 + AttributedString("\n") + $1 }
+        return Text(text)
+            .font(transcriptFont)
+            .lineSpacing(10)
+            .textSelection(.enabled)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .id(model.transcript)
     }
 
     private var statusBar: some View {
