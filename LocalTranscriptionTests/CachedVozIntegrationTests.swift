@@ -184,7 +184,7 @@ final class CachedEarIntegrationTests {
         let englishEntry = model.selection
 
         // SwiftUI clears the warning when the alert closes, before the button’s action runs.
-        model.dismissLanguageWarning()
+        model.hideLanguageWarning()
         await model.transcribeAnyway(warning)
         #expect(model.languageWarning == nil)
         #expect(model.errorMessage == nil)
@@ -200,6 +200,34 @@ final class CachedEarIntegrationTests {
         await model.select(englishEntry)
         #expect(model.transcript == english)
         #expect(model.detectedLanguage?.code == "en")
+    }
+
+    @Test func transcribesABatchInOrderAndKeepsGoingPastFailures() async throws {
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier(), history: history)
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent("missing-\(UUID().uuidString).wav")
+        await model.transcribe([try fixture("speech", "aiff"), missing, try fixture("speech", "wav"), try fixture("speech", "mp3")])
+        #expect(history.entries.map(\.fileName) == ["speech.mp3", "speech.wav", "speech.aiff"])
+        #expect(model.errorMessage?.contains("“\(missing.lastPathComponent)”") == true)
+        #expect(model.selection == history.entries.first?.id)
+        #expect(model.fileName == "speech.mp3")
+        #expect(model.queuedCount == 0)
+        #expect(!model.isBusy)
+    }
+
+    @Test func aLanguageWarningPausesTheBatchUntilDecided() async throws {
+        let model = TranscriptionModel(languages: EarLanguageIdentifier.shared, history: history)
+        await model.transcribe([try fixture("speech", "aiff"), try fixture("speech-zh", "m4a"), try fixture("speech", "wav")])
+        let warning = try #require(model.languageWarning)
+        #expect(warning.language.code == "zh")
+        #expect(model.queuedCount == 1)
+        #expect(history.entries.map(\.fileName) == ["speech.aiff"])
+
+        model.hideLanguageWarning()
+        await model.transcribeAnyway(warning)
+        #expect(history.entries.map(\.fileName) == ["speech.wav", "speech-zh.m4a", "speech.aiff"])
+        #expect(model.queuedCount == 0)
+        #expect(model.errorMessage == nil)
+        #expect(model.fileName == "speech.wav")
     }
 
     @Test func transcribesWhenIdentificationFails() async throws {

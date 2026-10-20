@@ -13,6 +13,7 @@ struct ContentView: View {
     @AppStorage("showTimestamps") private var showTimestamps = false
     // On iPhone the list is shown first; an import switches to the transcript so its progress shows.
     @State private var preferredColumn = NavigationSplitViewColumn.sidebar
+    @State private var isDropTargeted = false
     #if os(macOS)
     @State private var showingInspector = true
     @AppStorage("transcriptTextScale") private var transcriptTextScale = 1.0
@@ -32,8 +33,7 @@ struct ContentView: View {
                     ToolbarItem(placement: .primaryAction) {
                         Button("Import Audio…", systemImage: "plus") { isImporting = true }
                             .keyboardShortcut("o")
-                            .help("Import an audio recording (⌘O)")
-                            .disabled(model.isBusy)
+                            .help("Import audio recordings (⌘O), or drop them on the window")
                     }
                     if #available(macOS 26.0, iOS 26.0, *) {
                         ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -83,14 +83,21 @@ struct ContentView: View {
             if model.modelIsDownloaded { await model.prepare() }
         }
         .onChange(of: model.history.entries) { model.reconcileWithHistory() }
-        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.audio]) { result in
+        .fileImporter(isPresented: $isImporting, allowedContentTypes: [.audio],
+                      allowsMultipleSelection: true) { result in
             switch result {
-            case .success(let url):
-                preferredColumn = .detail
-                Task { await model.transcribe(url) }
+            case .success(let urls):
+                importFiles(urls)
             case .failure(let error):
                 model.errorMessage = error.localizedDescription
             }
+        }
+        .dropDestination(for: URL.self) { urls, _ in
+            importFiles(urls)
+            return AudioFiles.partition(urls).audio.count > 0
+        } isTargeted: { isDropTargeted = $0 }
+        .overlay {
+            if isDropTargeted { dropHighlight }
         }
         .fileExporter(isPresented: $isExporting,
                       document: exportDocument,
@@ -108,13 +115,34 @@ struct ContentView: View {
         }
         .alert("Language Not Supported", isPresented: Binding(
             get: { model.languageWarning != nil },
-            set: { if !$0 { model.dismissLanguageWarning() } }
+            set: { if !$0 { model.hideLanguageWarning() } }
         ), presenting: model.languageWarning) { warning in
             Button("Transcribe Anyway") { Task { await model.transcribeAnyway(warning) } }
-            Button("Cancel", role: .cancel) { model.dismissLanguageWarning() }
+            Button("Cancel", role: .cancel) { Task { await model.dismissLanguageWarning() } }
         } message: { warning in
             Text("This recording sounds like \(warning.language.name), which Voz can’t transcribe. Transcribing it anyway will likely produce incorrect text.")
         }
+    }
+
+    private func importFiles(_ urls: [URL]) {
+        // On iPhone, show the transcript screen so the queue’s progress is visible.
+        preferredColumn = .detail
+        Task { await model.importFiles(urls) }
+    }
+
+    private var dropHighlight: some View {
+        RoundedRectangle(cornerRadius: 12)
+            .strokeBorder(Color.accentColor, lineWidth: 3)
+            .padding(6)
+            .overlay {
+                Label("Drop audio to transcribe", systemImage: "waveform")
+                    .font(.headline)
+                    .padding(.horizontal, 16)
+                    .padding(.vertical, 10)
+                    .background(.regularMaterial, in: Capsule())
+            }
+            .allowsHitTesting(false)
+            .accessibilityHidden(true)
     }
 
     private func export(_ format: TranscriptFormat) {
@@ -130,12 +158,11 @@ struct ContentView: View {
                 ContentUnavailableView {
                     Label("No Recording", systemImage: "waveform")
                 } description: {
-                    Text("Import an audio recording to create a transcript on your device, or choose one from History.")
+                    Text("Import or drop audio recordings to create transcripts on your device, or choose one from History.")
                 } actions: {
                     Button("Import Audio…") { isImporting = true }
                         .buttonStyle(.borderedProminent)
                         .controlSize(.large)
-                        .disabled(model.isBusy)
                 }
             } else {
                 ScrollView {
@@ -217,6 +244,13 @@ struct ContentView: View {
                             .controlSize(.mini)
                             .accessibilityLabel(status)
                         Text(status).accessibilityAddTraits(.updatesFrequently)
+                    }
+                    if model.queuedCount > 0 {
+                        Spacer(minLength: 8)
+                        Text("\(model.queuedCount) more queued")
+                        Button("Clear Queue") { model.clearQueue() }
+                            .buttonStyle(.borderless)
+                            .controlSize(.small)
                     }
                 } else {
                     Image(systemName: "lock.shield")

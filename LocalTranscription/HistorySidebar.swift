@@ -41,7 +41,6 @@ struct HistorySidebar: View {
             // On iPhone the list is the first screen, so importing must be possible from here.
             ToolbarItem(placement: .primaryAction) {
                 Button("Import Audio…", systemImage: "plus") { isImporting = true }
-                    .disabled(model.isBusy)
             }
             #endif
             ToolbarItem {

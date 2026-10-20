@@ -103,7 +103,7 @@ struct LanguageWarningFlowTests {
         #expect(model.transcript.isEmpty)
         #expect(model.fileName.isEmpty)
 
-        model.dismissLanguageWarning()
+        await model.dismissLanguageWarning()
         #expect(model.languageWarning == nil)
         #expect(model.fileName.isEmpty)
         #expect(!model.isReady)
@@ -118,6 +118,92 @@ struct LanguageWarningFlowTests {
         #expect(model.errorMessage != nil)
     }
 
+}
+
+@MainActor
+struct ImportQueueTests {
+    private let chinese = DetectedLanguage(code: "zh", confidence: 0.97, isReliable: true)
+
+    private func recordings(_ count: Int) throws -> [URL] {
+        try (0..<count).map { index in
+            let url = FileManager.default.temporaryDirectory.appendingPathComponent("queued-\(index)-\(UUID().uuidString).m4a")
+            try Data("audio".utf8).write(to: url)
+            return url
+        }
+    }
+
+    @Test func sortsAudioFromOtherFiles() throws {
+        let bundle = Bundle(for: LanguageFixtureBundle.self)
+        let audio = try ["aiff", "wav", "mp3", "m4a", "aac", "flac", "caf"].map { format in
+            try #require(bundle.url(forResource: "speech", withExtension: format, subdirectory: "Fixtures"))
+        }
+        let notes = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".txt")
+        try Data("notes".utf8).write(to: notes)
+        defer { try? FileManager.default.removeItem(at: notes) }
+        let folder = FileManager.default.temporaryDirectory
+        let remote = try #require(URL(string: "https://example.com/speech.wav"))
+
+        let sorted = AudioFiles.partition(audio + [notes, folder, remote])
+        #expect(sorted.audio == audio)
+        #expect(sorted.rejected == [notes, folder, remote])
+    }
+
+    @Test func reportsFilesThatAreNotAudioWithoutQueuingThem() async throws {
+        let notes = FileManager.default.temporaryDirectory.appendingPathComponent("meeting notes.txt")
+        try Data("notes".utf8).write(to: notes)
+        defer { try? FileManager.default.removeItem(at: notes) }
+        let model = TranscriptionModel(recognizers: RecognizerStore(), languages: FakeLanguageIdentifier(),
+                                       history: .temporary())
+        let queued = await model.importFiles([notes])
+        #expect(!queued)
+        #expect(model.errorMessage?.contains("“meeting notes.txt”") == true)
+        #expect(model.queuedCount == 0)
+        #expect(!model.isReady)
+    }
+
+    @Test func pausesOnALanguageWarningAndContinuesAfterTheDecision() async throws {
+        let files = try recordings(3)
+        defer { files.forEach { try? FileManager.default.removeItem(at: $0) } }
+        let model = TranscriptionModel(recognizers: RecognizerStore(),
+                                       languages: FakeLanguageIdentifier(result: chinese), history: .temporary())
+
+        await model.transcribe(files)
+        #expect(model.languageWarning?.url == files[0])
+        #expect(model.queuedCount == 2)
+        #expect(!model.isBusy)
+        #expect(!model.isReady)
+
+        // Cancel skips this file and moves on to the next, which warns too.
+        await model.dismissLanguageWarning()
+        #expect(model.languageWarning?.url == files[1])
+        #expect(model.queuedCount == 1)
+
+        // Files added while paused wait their turn.
+        let late = try recordings(1)
+        defer { late.forEach { try? FileManager.default.removeItem(at: $0) } }
+        await model.transcribe(late)
+        #expect(model.languageWarning?.url == files[1])
+        #expect(model.queuedCount == 2)
+
+        model.clearQueue()
+        await model.dismissLanguageWarning()
+        #expect(model.languageWarning == nil)
+        #expect(model.queuedCount == 0)
+        #expect(!model.isReady)
+    }
+
+    @Test func reportsEachFailedFileByName() async throws {
+        let folder = FileManager.default.temporaryDirectory
+        let missing = folder.appendingPathComponent("missing-\(UUID().uuidString).wav")
+        let model = TranscriptionModel(recognizers: RecognizerStore(), languages: FakeLanguageIdentifier(),
+                                       history: .temporary())
+        await model.transcribe([missing, folder])
+        let message = try #require(model.errorMessage)
+        #expect(message.contains("“\(missing.lastPathComponent)”"))
+        #expect(message.contains("“\(folder.lastPathComponent)”"))
+        #expect(model.queuedCount == 0)
+        #expect(!model.isBusy)
+    }
 }
 
 private final class LanguageFixtureBundle: NSObject {}

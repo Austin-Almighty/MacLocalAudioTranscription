@@ -2,6 +2,7 @@ import DesertAnt
 import Foundation
 import Observation
 import os
+import UniformTypeIdentifiers
 import Voz
 
 /// A recording that sounds like a language Voz doesn’t support, waiting for the person to decide.
@@ -35,6 +36,9 @@ final class TranscriptionModel {
     @ObservationIgnored private let languages: any LanguageIdentifying
     @ObservationIgnored private var operation = 0
     @ObservationIgnored private var selectionLoad = 0
+    @ObservationIgnored private var isProcessingQueue = false
+    @ObservationIgnored private var preparing: Task<Void, Never>?
+    private var queue: [QueuedFile] = []
     @ObservationIgnored let history: TranscriptHistory
 
     init(recognizers: RecognizerStore = .shared,
@@ -56,7 +60,15 @@ final class TranscriptionModel {
     }
 
     func prepare() async {
-        guard !isBusy else { return }
+        if let preparing { return await preparing.value }
+        guard !isBusy, !isProcessingQueue else { return }
+        let task = Task { await loadForPreparation() }
+        preparing = task
+        await task.value
+        preparing = nil
+    }
+
+    private func loadForPreparation() async {
         status = "Preparing Voz…"
         errorMessage = nil
         defer { status = nil }
@@ -68,20 +80,59 @@ final class TranscriptionModel {
         }
     }
 
+    /// How many files are waiting behind the one being transcribed.
+    var queuedCount: Int { queue.count }
+
     func transcribe(_ url: URL) async {
-        await transcribe(url, language: .identify)
+        await transcribe([url])
     }
 
-    /// Transcribes the recording behind a language warning despite the warning. Takes the warning
-    /// itself because SwiftUI dismisses an alert, clearing the warning, before running its action.
+    /// Queues recordings and transcribes them one at a time; each success is saved to history.
+    /// Files added while a transcription runs join the queue.
+    func transcribe(_ urls: [URL]) async {
+        if !isProcessingQueue && languageWarning == nil { errorMessage = nil }
+        queue += urls.map { QueuedFile(url: $0, check: .identify) }
+        await processQueue()
+    }
+
+    /// Queues dropped or chosen files, reporting any that aren’t audio. Returns whether any were queued.
+    @discardableResult
+    func importFiles(_ urls: [URL]) async -> Bool {
+        let (audio, rejected) = AudioFiles.partition(urls)
+        if !rejected.isEmpty {
+            let names = rejected.map { "“\($0.lastPathComponent)”" }.formatted(.list(type: .and))
+            appendError("\(names) \(rejected.count == 1 ? "isn’t an audio file" : "aren’t audio files") and wasn’t transcribed.")
+        }
+        guard !audio.isEmpty else { return false }
+        queue += audio.map { QueuedFile(url: $0, check: .identify) }
+        await processQueue()
+        return true
+    }
+
+    /// Transcribes the recording behind a language warning despite the warning, then continues
+    /// with the queue. Takes the warning itself because SwiftUI dismisses an alert, clearing the
+    /// warning, before running its action.
     func transcribeAnyway(_ warning: LanguageWarning) async {
         if languageWarning == warning { languageWarning = nil }
-        await transcribe(warning.url, language: .accepted(warning.language))
+        queue.insert(QueuedFile(url: warning.url, check: .accepted(warning.language)), at: 0)
+        await processQueue()
     }
 
-    /// Keeps the previous transcript and drops the recording behind the language warning.
-    func dismissLanguageWarning() {
+    /// Hides the language warning without deciding; SwiftUI calls this as the alert closes.
+    func hideLanguageWarning() {
         languageWarning = nil
+    }
+
+    /// Skips the recording behind the language warning, keeping the previous transcript, and
+    /// continues with the queue.
+    func dismissLanguageWarning() async {
+        languageWarning = nil
+        await processQueue()
+    }
+
+    /// Drops the files that haven’t started yet.
+    func clearQueue() {
+        queue.removeAll()
     }
 
     private enum LanguageCheck {
@@ -89,10 +140,30 @@ final class TranscriptionModel {
         case accepted(DetectedLanguage)
     }
 
+    private struct QueuedFile {
+        let url: URL
+        let check: LanguageCheck
+    }
+
+    /// Transcribes queued files in order. Waits for model preparation, and pauses while a
+    /// language warning waits for the person.
+    private func processQueue() async {
+        guard !isProcessingQueue else { return }
+        isProcessingQueue = true
+        defer { isProcessingQueue = false }
+        if let preparing { await preparing.value }
+        while languageWarning == nil, !queue.isEmpty {
+            let file = queue.removeFirst()
+            await transcribe(file.url, language: file.check)
+        }
+    }
+
+    private func appendError(_ message: String) {
+        errorMessage = errorMessage.map { $0 + "\n\n" + message } ?? message
+    }
+
     private func transcribe(_ url: URL, language check: LanguageCheck) async {
-        guard !isBusy else { return }
         status = "Opening audio…"
-        errorMessage = nil
         operation += 1
         let current = operation
         defer {
@@ -141,7 +212,7 @@ final class TranscriptionModel {
             saveToHistory()
             prepareLanguageCheck()
         } catch {
-            errorMessage = error.localizedDescription
+            appendError("“\(url.lastPathComponent)” couldn’t be transcribed. \(error.localizedDescription)")
         }
     }
 
@@ -162,7 +233,7 @@ final class TranscriptionModel {
         } catch {
             selection = nil
             Self.historyLogger.error("Couldn’t save transcript: \(error.localizedDescription, privacy: .public)")
-            errorMessage = "The transcript couldn’t be saved to history: \(error.localizedDescription)"
+            appendError("The transcript of “\(fileName)” couldn’t be saved to history. \(error.localizedDescription)")
         }
     }
 
@@ -301,5 +372,22 @@ final class RecognizerStore {
         // Ignore updates that arrive after the download has finished.
         guard let current = downloadProgress else { return }
         downloadProgress = max(current, min(1, fraction))
+    }
+}
+
+/// Sorts dropped or chosen files into recordings and everything else.
+enum AudioFiles {
+    static func partition(_ urls: [URL]) -> (audio: [URL], rejected: [URL]) {
+        var audio: [URL] = [], rejected: [URL] = []
+        for url in urls {
+            let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)
+                ?? UTType(filenameExtension: url.pathExtension)
+            if url.isFileURL, type?.conforms(to: .audio) == true {
+                audio.append(url)
+            } else {
+                rejected.append(url)
+            }
+        }
+        return (audio, rejected)
     }
 }
