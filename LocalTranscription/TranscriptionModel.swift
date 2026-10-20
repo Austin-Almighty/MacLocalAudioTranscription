@@ -1,13 +1,24 @@
 import DesertAnt
 import Foundation
 import Observation
+import os
 import Voz
+
+/// A recording that sounds like a language Voz doesn’t support, waiting for the person to decide.
+struct LanguageWarning: Equatable {
+    let url: URL
+    let language: DetectedLanguage
+}
 
 @MainActor
 @Observable
 final class TranscriptionModel {
+    private static let logger = Logger(subsystem: "LocalTranscription", category: "Language")
+
     private(set) var transcript = ""
     private(set) var cues: [SubtitleCue] = []
+    private(set) var detectedLanguage: DetectedLanguage?
+    private(set) var languageWarning: LanguageWarning?
     private(set) var fileName = ""
     private(set) var status: String?
     private(set) var isReady = false
@@ -18,10 +29,12 @@ final class TranscriptionModel {
     var errorMessage: String?
 
     @ObservationIgnored private let recognizers: RecognizerStore
+    @ObservationIgnored private let languages: any LanguageIdentifying
     @ObservationIgnored private var operation = 0
 
-    init(recognizers: RecognizerStore = .shared) {
+    init(recognizers: RecognizerStore = .shared, languages: any LanguageIdentifying = EarLanguageIdentifier.shared) {
         self.recognizers = recognizers
+        self.languages = languages
     }
 
     var isBusy: Bool { status != nil }
@@ -47,6 +60,27 @@ final class TranscriptionModel {
     }
 
     func transcribe(_ url: URL) async {
+        await transcribe(url, language: .identify)
+    }
+
+    /// Transcribes the recording behind a language warning despite the warning. Takes the warning
+    /// itself because SwiftUI dismisses an alert, clearing the warning, before running its action.
+    func transcribeAnyway(_ warning: LanguageWarning) async {
+        if languageWarning == warning { languageWarning = nil }
+        await transcribe(warning.url, language: .accepted(warning.language))
+    }
+
+    /// Keeps the previous transcript and drops the recording behind the language warning.
+    func dismissLanguageWarning() {
+        languageWarning = nil
+    }
+
+    private enum LanguageCheck {
+        case identify
+        case accepted(DetectedLanguage)
+    }
+
+    private func transcribe(_ url: URL, language check: LanguageCheck) async {
         guard !isBusy else { return }
         status = "Opening audio…"
         errorMessage = nil
@@ -68,6 +102,19 @@ final class TranscriptionModel {
                   try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
                 throw CocoaError(.fileReadNoPermission)
             }
+            let language: DetectedLanguage?
+            switch check {
+            case .identify:
+                status = "Identifying language…"
+                language = await identifyLanguage(url)
+                // Ask before loading the model, so unsupported speech never costs a model load.
+                if let language, language.isUnsupported {
+                    languageWarning = LanguageWarning(url: url, language: language)
+                    return
+                }
+            case .accepted(let accepted):
+                language = accepted
+            }
             let recognizer = try await loadModel()
             status = "Transcribing on device…"
             transcriptionProgress = 0
@@ -78,6 +125,7 @@ final class TranscriptionModel {
             }
             transcript = result.text
             cues = Subtitles.cues(from: result.words)
+            detectedLanguage = language
             fileName = url.lastPathComponent
             audioDuration = result.duration
             processingTime = result.processingTime
@@ -92,6 +140,16 @@ final class TranscriptionModel {
         transcriptionProgress = max(current, min(1, fraction))
     }
 
+    /// Language identification is advisory: any failure lets transcription continue.
+    private func identifyLanguage(_ url: URL) async -> DetectedLanguage? {
+        do {
+            return try await languages.identify(url)
+        } catch {
+            Self.logger.error("Language identification failed: \(error.localizedDescription, privacy: .public)")
+            return nil
+        }
+    }
+
     private func loadModel() async throws -> Voz {
         if !recognizers.isLoaded {
             status = Voz.isDownloaded() ? "Loading Voz…" : "Downloading and preparing Voz…"
@@ -99,6 +157,8 @@ final class TranscriptionModel {
         let loaded = try await recognizers.recognizer()
         modelIsDownloaded = true
         isReady = true
+        let languages = languages
+        Task.detached(priority: .utility) { await languages.prepare() }
         return loaded
     }
 }

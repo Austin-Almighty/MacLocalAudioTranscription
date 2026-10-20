@@ -96,6 +96,15 @@ struct ContentView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+        .alert("Language Not Supported", isPresented: Binding(
+            get: { model.languageWarning != nil },
+            set: { if !$0 { model.dismissLanguageWarning() } }
+        ), presenting: model.languageWarning) { warning in
+            Button("Transcribe Anyway") { Task { await model.transcribeAnyway(warning) } }
+            Button("Cancel", role: .cancel) { model.dismissLanguageWarning() }
+        } message: { warning in
+            Text("This recording sounds like \(warning.language.name), which Voz can’t transcribe. Transcribing it anyway will likely produce incorrect text.")
+        }
     }
 
     private func export(_ format: TranscriptFormat) {
@@ -147,6 +156,11 @@ struct ContentView: View {
         #else
         .background(.background)
         #endif
+    }
+
+    private var languageDescription: String {
+        guard let language = model.detectedLanguage else { return "Not identified" }
+        return language.isReliable ? language.name : "\(language.name) (uncertain)"
     }
 
     private var transcriptFont: Font {
@@ -226,6 +240,9 @@ struct ContentView: View {
                 }
                 if let duration = model.audioDuration {
                     LabeledContent("Duration", value: String(format: "%.1f seconds", duration))
+                }
+                if !model.fileName.isEmpty {
+                    LabeledContent("Language", value: languageDescription)
                 }
                 if let time = model.processingTime {
                     LabeledContent("Processing", value: String(format: "%.2f seconds", time))

@@ -1,5 +1,6 @@
 import Foundation
 import Testing
+import Ear
 import Voz
 @testable import LocalTranscription
 
@@ -10,7 +11,7 @@ import Voz
 struct CachedVozIntegrationTests {
     @Test(arguments: ["aiff", "wav", "mp3", "m4a", "aac", "flac", "caf"])
     func transcribesSupportedAudioFormats(format: String) async throws {
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier())
         try #require(model.modelIsDownloaded)
         let audio = try fixture(format)
         await model.transcribe(audio)
@@ -36,7 +37,7 @@ struct CachedVozIntegrationTests {
         defer { try? FileManager.default.removeItem(at: file) }
         let audio = file.appendingPathComponent("訪談 café 🎙️.aiff")
         try FileManager.default.copyItem(at: fixture("aiff"), to: audio)
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier())
         try #require(model.modelIsDownloaded)
         await model.transcribe(audio)
         #expect(model.errorMessage == nil)
@@ -45,7 +46,7 @@ struct CachedVozIntegrationTests {
     }
 
     @Test func failedImportPreservesThePreviousTranscript() async throws {
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier())
         try #require(model.modelIsDownloaded)
         await model.transcribe(try fixture("aiff"))
         try #require(model.errorMessage == nil)
@@ -67,7 +68,7 @@ struct CachedVozIntegrationTests {
         let invalid = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".wav")
         try Data("This is not audio".utf8).write(to: invalid)
         defer { try? FileManager.default.removeItem(at: invalid) }
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier())
         try #require(model.modelIsDownloaded)
         await model.transcribe(invalid)
         #expect(model.errorMessage != nil)
@@ -83,7 +84,7 @@ struct CachedVozIntegrationTests {
     }
 
     @Test func repeatedPreparationKeepsTheTranscript() async throws {
-        let model = TranscriptionModel()
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier())
         try #require(model.modelIsDownloaded)
         await model.transcribe(try fixture("aiff"))
         try #require(model.errorMessage == nil)
@@ -100,6 +101,65 @@ struct CachedVozIntegrationTests {
     private func fixture(_ format: String) throws -> URL {
         try #require(Bundle(for: FixtureBundle.self)
             .url(forResource: "speech", withExtension: format, subdirectory: "Fixtures"))
+    }
+}
+
+@Suite("Cached Ear language check", .serialized,
+       .enabled(if: Voz.isDownloaded() && Ear.isDownloaded(),
+                "Prepare Voz in the app and let it fetch the language model before running these tests"))
+@MainActor
+struct CachedEarIntegrationTests {
+    @Test(arguments: ["aiff", "wav", "mp3", "m4a", "aac", "flac", "caf"])
+    func identifiesEnglishAndTranscribes(format: String) async throws {
+        let model = TranscriptionModel(languages: EarLanguageIdentifier.shared)
+        await model.transcribe(try fixture("speech", format))
+        #expect(model.errorMessage == nil)
+        #expect(model.languageWarning == nil)
+        #expect(model.detectedLanguage?.code == "en")
+        #expect(model.detectedLanguage?.isReliable == true)
+        #expect(model.transcript.contains("quick brown fox"))
+    }
+
+    @Test func warnsBeforeTranscribingChineseThenTranscribesAnyway() async throws {
+        let model = TranscriptionModel(languages: EarLanguageIdentifier.shared)
+        await model.transcribe(try fixture("speech", "aiff"))
+        try #require(model.errorMessage == nil)
+        let english = model.transcript
+
+        let chinese = try fixture("speech-zh", "m4a")
+        await model.transcribe(chinese)
+        let warning = try #require(model.languageWarning)
+        #expect(warning.url == chinese)
+        #expect(warning.language.code == "zh")
+        #expect(warning.language.isReliable)
+        #expect(!model.isBusy)
+        #expect(model.transcript == english)
+        #expect(model.fileName == "speech.aiff")
+        #expect(model.detectedLanguage?.code == "en")
+
+        // SwiftUI clears the warning when the alert closes, before the button’s action runs.
+        model.dismissLanguageWarning()
+        await model.transcribeAnyway(warning)
+        #expect(model.languageWarning == nil)
+        #expect(model.errorMessage == nil)
+        #expect(!model.isBusy)
+        #expect(model.fileName == "speech-zh.m4a")
+        #expect(model.detectedLanguage?.code == "zh")
+        #expect(model.transcript != english)
+    }
+
+    @Test func transcribesWhenIdentificationFails() async throws {
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier(failure: CocoaError(.fileReadCorruptFile)))
+        await model.transcribe(try fixture("speech", "wav"))
+        #expect(model.errorMessage == nil)
+        #expect(model.languageWarning == nil)
+        #expect(model.detectedLanguage == nil)
+        #expect(model.transcript.contains("quick brown fox"))
+    }
+
+    private func fixture(_ name: String, _ format: String) throws -> URL {
+        try #require(Bundle(for: FixtureBundle.self)
+            .url(forResource: name, withExtension: format, subdirectory: "Fixtures"))
     }
 }
 

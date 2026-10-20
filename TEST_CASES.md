@@ -32,17 +32,23 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Export formats | Export text, SRT, and WebVTT | Use `.txt`, `.srt`, and `.vtt` with matching file types the document can write. |
 | Progress | Report progress with no transcription or download running | Ignore the late update and show no progress. |
 | Subtitles | Transcribe each fixture with the real model | Produce cues within the recording’s duration and clear transcription progress afterward. |
+| Language check | Detections of Chinese, Japanese, English, German, uncertain Chinese, and uncertain Swedish | Warn only for confident detections of languages Voz doesn’t support. |
+| Language check | Read all seven fixture formats, a seven-minute stereo recording, and non-audio data | Short files are read whole; long ones as six evenly spaced 30-second mono segments from start to end; non-audio is rejected. |
+| Language check | A stand-in identifier reports confident Chinese, then the warning is dismissed | Warn without loading Voz, leave the app idle, and keep the previous result. Invalid files report an error without a warning. |
+| Language check | Identify each English fixture with the real Ear model | Detect reliable English and transcribe normally. |
+| Language check | Transcribe English, then import the Chinese fixture, then choose Transcribe Anyway | Warn before transcribing while keeping the English result; Transcribe Anyway completes and records Chinese. |
+| Language check | Language identification throws | Transcribe normally with no language shown. |
 | App updates | Compare major, minor, patch, equivalent, and older versions | Numeric ordering offers only a newer version; `1.0` and `1.0.0` are equal. |
 | App updates | Receive malformed versions, draft/prerelease/unpublished releases, missing assets, or unofficial download URLs | No download is offered. |
 | App updates | Receive HTTP 404, 403, 429, or 500 | Report unavailable releases, rate limits, or server errors instead of claiming the app is current. |
 
-The real-model suite runs serially on Apple Silicon macOS only when `Voz.isDownloaded()` passes the SDK’s cache-integrity checks. Otherwise it is explicitly skipped. It does not download model weights. Prepare the model in the app first, then rerun the tests. A sandboxed Xcode build may use a different cache from the locally packaged app.
+The real-model suite runs serially on Apple Silicon macOS only when `Voz.isDownloaded()` passes the SDK’s cache-integrity checks. Otherwise it is explicitly skipped. It does not download model weights. Prepare the model in the app first, then rerun the tests. The language-check suite also requires Ear’s model, which the app fetches after Voz is ready; the other real-model tests use a stand-in identifier so they never trigger that download. A sandboxed Xcode build may use a different cache from the locally packaged app.
 
 The format fixtures are versions of the same locally synthesized recording, generated using macOS’s Samantha voice and converted with FFmpeg. Their spoken reference is:
 
 > This is a local speech recognition test. The quick brown fox jumps over the lazy dog.
 
-FFmpeg is needed only to regenerate the fixtures; running the tests uses the bundled files. The Chinese text and file name test Unicode handling, not Chinese speech recognition. Voz does not support Chinese speech.
+FFmpeg is needed only to regenerate the fixtures; running the tests uses the bundled files. The Chinese text and file name test Unicode handling, not Chinese speech recognition. Voz does not support Chinese speech. `speech-zh.m4a` is 8.5 seconds of Taiwan Mandarin synthesized with macOS’s Eddy (zh_TW) voice and converted with `afconvert`; Ear identifies it as Chinese with full confidence, so it exercises the unsupported-language warning.
 
 ## Manual UI and device checks
 
@@ -68,5 +74,6 @@ These cases supplement the automated suite. Results from the October 16, 2026 ru
 | UI-16 | Transcribe a fixture, choose Export Subtitles → SubRip, then WebVTT, and open both files in QuickTime Player or VLC. | Both files save with the audio file’s name and correct extension, and captions appear in time with the speech. |
 | UI-17 | Turn Show Timestamps on and off in Recording Info, then change transcript text size. | Each cue shows its start time; the plain transcript returns when turned off; text size applies in both views. |
 | UI-18 | With no model cached, choose Download Model; then import a long recording. | The status bar shows a filling bar and percentage during the download, then a spinner while the model prepares. During transcription the bar fills, then gives way to a spinner until the transcript appears; it never sits at 100%. |
+| UI-19 | Import `LocalTranscriptionTests/Fixtures/speech-zh.m4a`, choose Cancel; import it again and choose Transcribe Anyway. Then import an English fixture. | The Language Not Supported alert names Chinese; Cancel keeps the earlier transcript; Transcribe Anyway shows text and Language “Chinese”; the English recording shows Language “English” with no alert. |
 
 Offline inference, empty-cache failure and retry, long/noisy Spanish audio, light/dark appearance, import/export cancellation, clipboard copying, inspector controls, and window resizing have now been exercised. The [accessibility follow-up](verification/accessibility-check-results.md) also checked keyboard navigation, Reduce Transparency, transcript enlargement to 200%, size limits, heading semantics, and the accessible progress name. System preferred reading size is unsupported; the app provides transcript-specific size controls. Spoken VoiceOver and interruption partway through a download remain unverified. Synthetic recordings are regression checks, not accuracy benchmarks.

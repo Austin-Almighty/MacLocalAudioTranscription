@@ -20,6 +20,9 @@
 		A0000000000000000000000C /* AppUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000D; };
 		A0000000000000000000000D /* Subtitles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000E; };
 		A0000000000000000000000E /* SubtitlesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000F; };
+		A0000000000000000000000F /* Ear in Frameworks */ = {isa = PBXBuildFile; productRef = D00000000000000000000004; };
+		A00000000000000000000010 /* LanguageCheck.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000010; };
+		A00000000000000000000011 /* LanguageCheckTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B00000000000000000000011; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -48,10 +51,12 @@
 		B0000000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdaterTests.swift; sourceTree = "<group>"; };
 		B0000000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Subtitles.swift; sourceTree = "<group>"; };
 		B0000000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitlesTests.swift; sourceTree = "<group>"; };
+		B00000000000000000000010 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageCheck.swift; sourceTree = "<group>"; };
+		B00000000000000000000011 = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = LanguageCheckTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
-		E00000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000004, A00000000000000000000005); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000001 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000004, A00000000000000000000005, A0000000000000000000000F); runOnlyForDeploymentPostprocessing = 0; };
 		E00000000000000000000002 = {isa = PBXFrameworksBuildPhase; buildActionMask = 2147483647; files = (); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXFrameworksBuildPhase section */
 
@@ -63,12 +68,12 @@
 		};
 		700000000000000000000002 = {
 			isa = PBXGroup;
-			children = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B00000000000000000000005, B0000000000000000000000B, B0000000000000000000000C, B0000000000000000000000E);
+			children = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B00000000000000000000005, B0000000000000000000000B, B0000000000000000000000C, B0000000000000000000000E, B00000000000000000000010);
 			path = LocalTranscription;
 			sourceTree = "<group>";
 		};
 		700000000000000000000003 = {isa = PBXGroup; children = (B00000000000000000000004, B00000000000000000000007); name = Products; sourceTree = "<group>"; };
-		700000000000000000000004 = {isa = PBXGroup; children = (B00000000000000000000006, B00000000000000000000008, B00000000000000000000009, B0000000000000000000000A, B0000000000000000000000D, B0000000000000000000000F); path = LocalTranscriptionTests; sourceTree = "<group>"; };
+		700000000000000000000004 = {isa = PBXGroup; children = (B00000000000000000000006, B00000000000000000000008, B00000000000000000000009, B0000000000000000000000A, B0000000000000000000000D, B0000000000000000000000F, B00000000000000000000011); path = LocalTranscriptionTests; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -79,7 +84,7 @@
 			buildRules = ();
 			dependencies = ();
 			name = LocalTranscription;
-			packageProductDependencies = (D00000000000000000000002, D00000000000000000000003);
+			packageProductDependencies = (D00000000000000000000002, D00000000000000000000003, D00000000000000000000004);
 			productName = LocalTranscription;
 			productReference = B00000000000000000000004;
 			productType = "com.apple.product-type.application";
@@ -129,8 +134,8 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		E00000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A0000000000000000000000B, A0000000000000000000000D); runOnlyForDeploymentPostprocessing = 0; };
-		E00000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A0000000000000000000000C, A0000000000000000000000E); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A0000000000000000000000B, A0000000000000000000000D, A00000000000000000000010); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A0000000000000000000000C, A0000000000000000000000E, A00000000000000000000011); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
@@ -266,6 +271,7 @@
 /* Begin XCSwiftPackageProductDependency section */
 		D00000000000000000000002 = {isa = XCSwiftPackageProductDependency; package = D00000000000000000000001; productName = Voz; };
 		D00000000000000000000003 = {isa = XCSwiftPackageProductDependency; package = D00000000000000000000001; productName = DesertAnt; };
+		D00000000000000000000004 = {isa = XCSwiftPackageProductDependency; package = D00000000000000000000001; productName = Ear; };
 /* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = F00000000000000000000001;

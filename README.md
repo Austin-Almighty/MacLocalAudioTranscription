@@ -57,13 +57,14 @@ Preparing a ZIP or cask does not publish an official release. The update check b
 
 ## SDK integration
 
-The Xcode project uses Swift Package Manager with `desert-ant-core` starting at **4.0.0**, up to the next major version, and links the `Voz` and `DesertAnt` products. The equivalent package declarations are:
+The Xcode project uses Swift Package Manager with `desert-ant-core` starting at **4.0.0**, up to the next major version, and links the `Voz`, `Ear`, and `DesertAnt` products. The equivalent package declarations are:
 
 ```swift
 .package(url: "https://github.com/Desert-Ant-Labs/desert-ant-core.git", from: "4.0.0")
 
 // Target dependencies:
 .product(name: "Voz", package: "desert-ant-core")
+.product(name: "Ear", package: "desert-ant-core")
 .product(name: "DesertAnt", package: "desert-ant-core")
 ```
 
@@ -83,10 +84,11 @@ print(result.text)
 
 ## Limits and data use
 
-- Voz supports 25 languages and does not detect unsupported audio. Chinese is not supported. Check the [supported languages](https://github.com/Desert-Ant-Labs/desert-ant-core/blob/v4.0.0/Sources/Voz/Voz.swift) before importing; unsupported speech can produce incorrect text without an error.
-- Audio and transcripts stay on the device. The SDK independently sends monthly model-license requests containing installation, app, model, and platform metadata, with no audio or transcript, as described in its [README](https://github.com/Desert-Ant-Labs/desert-ant-core/blob/v4.0.0/README.md#model-licenses).
+- Voz supports 25 [languages](https://github.com/Desert-Ant-Labs/desert-ant-core/blob/v4.0.0/Sources/Voz/Voz.swift) and produces incorrect text, without an error, for others such as Chinese. Before transcribing, the app identifies the spoken language on device with the SDK’s Ear model. When Ear is confident the language is unsupported, the app asks before loading Voz and offers **Transcribe Anyway** or **Cancel**; Cancel keeps the previous transcript. Uncertain detections, including Norwegian, Swedish, and Danish, which Ear confuses, never block transcription. Recording Info shows the detected language. For long recordings, Ear listens to six evenly spaced 30-second segments rather than decoding the whole file.
+- Ear’s model (about 5 MB) is downloaded from Hugging Face in the background after Voz is ready. Until it is on disk, or if identification fails, recordings are transcribed without a language check and failures are logged. Optimized builds identify a recording in about 0.1 seconds after Ear’s first load; unoptimized Debug builds can take several seconds.
+- Audio and transcripts stay on the device. The SDK independently sends monthly model-license requests for each model it uses (Voz and Ear) containing installation, app, model, and platform metadata, with no audio or transcript, as described in its [README](https://github.com/Desert-Ant-Labs/desert-ant-core/blob/v4.0.0/README.md#model-licenses).
 - Review the vendor’s [source-available license](https://license.desertant.com/1.0) before distribution.
-- This starter imports recordings. Live microphone capture and automatic language detection are outside its scope.
+- This starter imports recordings. Live microphone capture is outside its scope.
 
 ## Verify
 
