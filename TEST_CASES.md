@@ -25,6 +25,13 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Text encoding | Export “你好” followed by a newline | Write the known UTF-8 bytes without a byte order mark. |
 | Invalid text | Read malformed UTF-8 | Report a Cocoa error. |
 | Invalid text | Read a directory as a transcript | Report a Cocoa error instead of crashing. |
+| Subtitles | Group timed words with sentence ends, a pause over one second, more than six seconds, or more than two 42-character lines | Start a new cue at each boundary; no cue exceeds six seconds or two lines of 42 characters. |
+| Subtitles | Words with zero duration followed closely by another cue | Extend cues to half a second without overlapping the next cue. |
+| Subtitles | Format cues as SRT and WebVTT, including a start past one hour and non-ASCII text | Produce exact numbered SRT (`HH:MM:SS,mmm`) and WebVTT (`HH:MM:SS.mmm`) output. |
+| Subtitles | Export with no recognized words | Produce no cues, an empty SRT file, and a header-only WebVTT file. |
+| Export formats | Export text, SRT, and WebVTT | Use `.txt`, `.srt`, and `.vtt` with matching file types the document can write. |
+| Progress | Report progress with no transcription or download running | Ignore the late update and show no progress. |
+| Subtitles | Transcribe each fixture with the real model | Produce cues within the recording’s duration and clear transcription progress afterward. |
 | App updates | Compare major, minor, patch, equivalent, and older versions | Numeric ordering offers only a newer version; `1.0` and `1.0.0` are equal. |
 | App updates | Receive malformed versions, draft/prerelease/unpublished releases, missing assets, or unofficial download URLs | No download is offered. |
 | App updates | Receive HTTP 404, 403, 429, or 500 | Report unavailable releases, rate limits, or server errors instead of claiming the app is current. |
@@ -58,5 +65,8 @@ These cases supplement the automated suite. Results from the October 16, 2026 ru
 | UI-13 | In View, reset transcript size, increase it four times, and narrow the window with the inspector visible. Then check both size limits and reset. | Transcript renders at 200% with wrapping and no clipped words. Increase disables at 300%, Decrease at 75%, and Actual Transcript Text Size restores 100%. |
 | UI-14 | Choose LocalTranscription → Check for Updates with no published release, then retry offline. | A clear error appears; the app stays usable, no transcript is lost, and checking can be retried. |
 | UI-15 | After publishing a newer stable release with its Mac ZIP, check for updates, choose Later, then check again and choose Download Update. | Later leaves the app unchanged; Download Update opens the official ZIP in the default browser. Equivalent/older installed versions offer no downgrade. Homebrew users see upgrade instructions. |
+| UI-16 | Transcribe a fixture, choose Export Subtitles → SubRip, then WebVTT, and open both files in QuickTime Player or VLC. | Both files save with the audio file’s name and correct extension, and captions appear in time with the speech. |
+| UI-17 | Turn Show Timestamps on and off in Recording Info, then change transcript text size. | Each cue shows its start time; the plain transcript returns when turned off; text size applies in both views. |
+| UI-18 | With no model cached, choose Download Model; then import a long recording. | The status bar shows a filling bar and percentage during the download and during transcription, then a spinner while the model prepares. |
 
 Offline inference, empty-cache failure and retry, long/noisy Spanish audio, light/dark appearance, import/export cancellation, clipboard copying, inspector controls, and window resizing have now been exercised. The [accessibility follow-up](verification/accessibility-check-results.md) also checked keyboard navigation, Reduce Transparency, transcript enlargement to 200%, size limits, heading semantics, and the accessible progress name. System preferred reading size is unsupported; the app provides transcript-specific size controls. Spoken VoiceOver and interruption partway through a download remain unverified. Synthetic recordings are regression checks, not accuracy benchmarks.

@@ -23,6 +23,10 @@ struct CachedVozIntegrationTests {
         #expect(try #require(model.audioDuration) > 5)
         #expect(try #require(model.audioDuration) < 7)
         #expect(try #require(model.processingTime) > 0)
+        #expect(!model.cues.isEmpty)
+        #expect(model.cues.allSatisfy { $0.start >= 0 && $0.end >= $0.start })
+        #expect(try #require(model.cues.last).end <= (try #require(model.audioDuration)) + Subtitles.minCueDuration)
+        #expect(model.transcriptionProgress == nil)
     }
 
     @Test func acceptsSpacesAndUnicodeInFileNames() async throws {

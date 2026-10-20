@@ -41,6 +41,21 @@ struct TranscriptionModelTests {
         #expect(model.processingTime == nil)
     }
 
+    @Test func ignoresProgressOutsideATranscription() {
+        let model = TranscriptionModel(recognizers: RecognizerStore())
+        model.reportProgress(0.5, for: 0)
+        #expect(model.transcriptionProgress == nil)
+        #expect(model.progress == nil)
+        #expect(model.cues.isEmpty)
+    }
+
+    @Test func ignoresDownloadProgressWithoutADownload() {
+        let store = RecognizerStore()
+        store.reportDownload(0.5)
+        #expect(store.downloadProgress == nil)
+        #expect(!store.isLoaded)
+    }
+
     @Test func rejectsDirectoriesAsAudio() async {
         let model = TranscriptionModel()
         await model.transcribe(FileManager.default.temporaryDirectory)

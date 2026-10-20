@@ -8,6 +8,9 @@ struct ContentView: View {
     @State private var model = TranscriptionModel()
     @State private var isImporting = false
     @State private var isExporting = false
+    @State private var exportFormat = TranscriptFormat.text
+    @State private var exportDocument = TranscriptDocument(text: "")
+    @AppStorage("showTimestamps") private var showTimestamps = false
     #if os(macOS)
     @State private var showingInspector = true
     @AppStorage("transcriptTextScale") private var transcriptTextScale = 1.0
@@ -39,10 +42,16 @@ struct ContentView: View {
                         .help("Copy the transcript")
                         .disabled(model.transcript.isEmpty)
                         #endif
-                        Button("Save Transcript…", systemImage: "square.and.arrow.down") { isExporting = true }
+                        Button("Save Transcript…", systemImage: "square.and.arrow.down") { export(.text) }
                             .keyboardShortcut("s")
                             .help("Save the transcript as text (⌘S)")
                             .disabled(model.transcript.isEmpty)
+                        Menu("Export Subtitles", systemImage: "captions.bubble") {
+                            Button("SubRip (.srt)…") { export(.subRip) }
+                            Button("WebVTT (.vtt)…") { export(.webVTT) }
+                        }
+                        .help("Export timed subtitles")
+                        .disabled(model.cues.isEmpty)
                     }
                     if #available(macOS 26.0, iOS 26.0, *) {
                         ToolbarSpacer(.fixed, placement: .primaryAction)
@@ -74,9 +83,9 @@ struct ContentView: View {
             }
         }
         .fileExporter(isPresented: $isExporting,
-                      document: TranscriptDocument(text: model.transcript),
-                      contentType: .plainText,
-                      defaultFilename: (model.fileName as NSString).deletingPathExtension + ".txt") { result in
+                      document: exportDocument,
+                      contentType: exportFormat.contentType,
+                      defaultFilename: (model.fileName as NSString).deletingPathExtension + "." + exportFormat.fileExtension) { result in
             if case .failure(let error) = result { model.errorMessage = error.localizedDescription }
         }
         .alert("Local Transcription", isPresented: Binding(
@@ -87,6 +96,13 @@ struct ContentView: View {
         } message: {
             Text(model.errorMessage ?? "")
         }
+    }
+
+    private func export(_ format: TranscriptFormat) {
+        // Render once here; rendering in body would re-format long subtitles on every progress update.
+        exportFormat = format
+        exportDocument = TranscriptDocument(text: format.render(transcript: model.transcript, cues: model.cues))
+        isExporting = true
     }
 
     private var recordingContent: some View {
@@ -108,16 +124,16 @@ struct ContentView: View {
                         Text("Transcript")
                             .font(.title2.weight(.semibold))
                             .accessibilityAddTraits(.isHeader)
-                        Text(model.transcript.isEmpty ? "No speech was recognized." : model.transcript)
-                            #if os(macOS)
-                            .font(.system(size: NSFont.preferredFont(forTextStyle: .title3, options: [:]).pointSize * transcriptTextScale))
-                            #else
-                            .font(.title3)
-                            #endif
-                            .lineSpacing(6)
-                            .textSelection(.enabled)
-                            .frame(maxWidth: .infinity, alignment: .leading)
-                            .id(model.transcript)
+                        if showTimestamps && !model.cues.isEmpty {
+                            timedTranscript
+                        } else {
+                            Text(model.transcript.isEmpty ? "No speech was recognized." : model.transcript)
+                                .font(transcriptFont)
+                                .lineSpacing(6)
+                                .textSelection(.enabled)
+                                .frame(maxWidth: .infinity, alignment: .leading)
+                                .id(model.transcript)
+                        }
                     }
                     .frame(maxWidth: 720, alignment: .leading)
                     .padding(40)
@@ -133,15 +149,53 @@ struct ContentView: View {
         #endif
     }
 
+    private var transcriptFont: Font {
+        #if os(macOS)
+        .system(size: NSFont.preferredFont(forTextStyle: .title3, options: [:]).pointSize * transcriptTextScale)
+        #else
+        .title3
+        #endif
+    }
+
+    private var timedTranscript: some View {
+        let pattern: Duration.TimeFormatStyle.Pattern = (model.audioDuration ?? 0) >= 3600 ? .hourMinuteSecond : .minuteSecond
+        return LazyVStack(alignment: .leading, spacing: 12) {
+            ForEach(Array(model.cues.enumerated()), id: \.offset) { _, cue in
+                HStack(alignment: .firstTextBaseline, spacing: 16) {
+                    Text(Duration.seconds(cue.start).formatted(.time(pattern: pattern)))
+                        .font(.callout.monospacedDigit())
+                        .foregroundStyle(.secondary)
+                        .frame(minWidth: 56, alignment: .leading)
+                    Text(cue.text.replacingOccurrences(of: "\n", with: " "))
+                        .font(transcriptFont)
+                        .lineSpacing(6)
+                        .frame(maxWidth: .infinity, alignment: .leading)
+                }
+            }
+        }
+        .textSelection(.enabled)
+        .id(model.transcript)
+    }
+
     private var statusBar: some View {
         VStack(spacing: 0) {
             Divider()
             HStack(spacing: 8) {
                 if let status = model.status {
-                    ProgressView()
-                        .controlSize(.mini)
-                        .accessibilityLabel(status)
-                    Text(status).accessibilityAddTraits(.updatesFrequently)
+                    if let progress = model.progress {
+                        ProgressView(value: progress)
+                            .frame(width: 120)
+                            .accessibilityLabel(status)
+                        Text(status).accessibilityAddTraits(.updatesFrequently)
+                        Text(progress.formatted(.percent.precision(.fractionLength(0))))
+                            .monospacedDigit()
+                            .accessibilityHidden(true)
+                    } else {
+                        ProgressView()
+                            .controlSize(.mini)
+                            .accessibilityLabel(status)
+                        Text(status).accessibilityAddTraits(.updatesFrequently)
+                    }
                 } else {
                     Image(systemName: "lock.shield")
                         .accessibilityHidden(true)
@@ -176,6 +230,8 @@ struct ContentView: View {
                 if let time = model.processingTime {
                     LabeledContent("Processing", value: String(format: "%.2f seconds", time))
                 }
+                Toggle("Show Timestamps", isOn: $showTimestamps)
+                    .disabled(model.cues.isEmpty)
             }
 
             Section("Speech Recognition") {
@@ -214,6 +270,7 @@ struct ContentView: View {
 
 struct TranscriptDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.plainText] }
+    static var writableContentTypes: [UTType] { TranscriptFormat.allCases.map(\.contentType) }
     var text: String
 
     init(text: String) { self.text = text }

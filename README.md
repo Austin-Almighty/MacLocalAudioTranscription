@@ -4,7 +4,7 @@ A local transcription app for Apple Silicon Macs running macOS 15+, using Desert
 
 ## Run
 
-Open `dist/LocalTranscription.app` to launch the standalone Mac app. It automatically loads the model if it is already cached. Use **Import Audio** (⌘O), **Copy Transcript**, and **Save Transcript** (⌘S).
+Open `dist/LocalTranscription.app` to launch the standalone Mac app. It automatically loads the model if it is already cached. Use **Import Audio** (⌘O), **Copy Transcript**, and **Save Transcript** (⌘S). **Export Subtitles** saves timed SubRip (`.srt`) or WebVTT (`.vtt`) captions built from Voz’s word timings; cues break at sentence ends, pauses longer than one second, six seconds, or two 42-character lines. Turn on **Show Timestamps** in Recording Info to see each cue’s start time beside the transcript. The status bar shows percentage progress while the model downloads and while a recording is transcribed; preparing the model for the Neural Engine has no measurable progress and shows a spinner.
 
 The macOS interface uses a unified system toolbar with grouped actions, a standard Recording Info inspector, a compact status bar, and a transcript column that adapts to the window width. The inspector button and View menu show or hide recording details, model readiness, and language support. Standard SwiftUI components adopt macOS 27’s appearance and the Mac’s display settings; macOS 15 remains supported. Design follows Apple’s [Liquid Glass adoption guidance](https://developer.apple.com/documentation/technologyoverviews/adopting-liquid-glass).
 
@@ -109,6 +109,8 @@ xcodebuild -project LocalTranscription.xcodeproj -scheme LocalTranscription \
 For inference verification, import a short English recording on a physical device, then disable networking and transcribe another recording with the cached model. Confirm the transcript, retry after an unreadable file, and check that the UI stays responsive during preparation and transcription.
 
 The Mac update suite adds six tests covering numeric version ordering, invalid versions, unpublished releases, untrusted download links, malformed or missing assets, and HTTP failures. These tests pass independently of the model and network. Live release downloads require a published release and remain unverified.
+
+The subtitle suite adds ten tests covering cue grouping at sentence ends, pauses, and length limits; two-line wrapping; minimum cue duration without overlap; exact SRT and WebVTT output, including timestamps past one hour; recordings with no speech; and export file types. Two more tests check that late progress updates are ignored. Progress bars and subtitle export from a real recording have not yet been checked with the model loaded.
 
 ## Verified model inference on this Mac
 

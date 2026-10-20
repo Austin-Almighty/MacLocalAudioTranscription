@@ -18,6 +18,8 @@
 		A0000000000000000000000A /* Assets.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000B; };
 		A0000000000000000000000B /* AppUpdater.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000C; };
 		A0000000000000000000000C /* AppUpdaterTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000D; };
+		A0000000000000000000000D /* Subtitles.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000E; };
+		A0000000000000000000000E /* SubtitlesTests.swift in Sources */ = {isa = PBXBuildFile; fileRef = B0000000000000000000000F; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -44,6 +46,8 @@
 		B0000000000000000000000B = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; path = Assets.xcassets; sourceTree = "<group>"; };
 		B0000000000000000000000C = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdater.swift; sourceTree = "<group>"; };
 		B0000000000000000000000D = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = AppUpdaterTests.swift; sourceTree = "<group>"; };
+		B0000000000000000000000E = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = Subtitles.swift; sourceTree = "<group>"; };
+		B0000000000000000000000F = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = SubtitlesTests.swift; sourceTree = "<group>"; };
 /* End PBXFileReference section */
 
 /* Begin PBXFrameworksBuildPhase section */
@@ -59,12 +63,12 @@
 		};
 		700000000000000000000002 = {
 			isa = PBXGroup;
-			children = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B00000000000000000000005, B0000000000000000000000B, B0000000000000000000000C);
+			children = (B00000000000000000000001, B00000000000000000000002, B00000000000000000000003, B00000000000000000000005, B0000000000000000000000B, B0000000000000000000000C, B0000000000000000000000E);
 			path = LocalTranscription;
 			sourceTree = "<group>";
 		};
 		700000000000000000000003 = {isa = PBXGroup; children = (B00000000000000000000004, B00000000000000000000007); name = Products; sourceTree = "<group>"; };
-		700000000000000000000004 = {isa = PBXGroup; children = (B00000000000000000000006, B00000000000000000000008, B00000000000000000000009, B0000000000000000000000A, B0000000000000000000000D); path = LocalTranscriptionTests; sourceTree = "<group>"; };
+		700000000000000000000004 = {isa = PBXGroup; children = (B00000000000000000000006, B00000000000000000000008, B00000000000000000000009, B0000000000000000000000A, B0000000000000000000000D, B0000000000000000000000F); path = LocalTranscriptionTests; sourceTree = "<group>"; };
 /* End PBXGroup section */
 
 /* Begin PBXNativeTarget section */
@@ -125,8 +129,8 @@
 /* End PBXResourcesBuildPhase section */
 
 /* Begin PBXSourcesBuildPhase section */
-		E00000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A0000000000000000000000B); runOnlyForDeploymentPostprocessing = 0; };
-		E00000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A0000000000000000000000C); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000003 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000001, A00000000000000000000002, A00000000000000000000003, A0000000000000000000000B, A0000000000000000000000D); runOnlyForDeploymentPostprocessing = 0; };
+		E00000000000000000000004 = {isa = PBXSourcesBuildPhase; buildActionMask = 2147483647; files = (A00000000000000000000006, A00000000000000000000007, A00000000000000000000008, A0000000000000000000000C, A0000000000000000000000E); runOnlyForDeploymentPostprocessing = 0; };
 /* End PBXSourcesBuildPhase section */
 
 /* Begin PBXTargetDependency section */
