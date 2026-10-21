@@ -11,6 +11,7 @@ struct ContentView: View {
     @State private var exportFormat = TranscriptFormat.text
     @State private var exportDocument = TranscriptDocument(text: "")
     @AppStorage("showTimestamps") private var showTimestamps = false
+    @Environment(\.scenePhase) private var scenePhase
     // On iPhone the list is shown first; an import switches to the transcript so its progress shows.
     @State private var preferredColumn = NavigationSplitViewColumn.sidebar
     @State private var isDropTargeted = false
@@ -92,6 +93,13 @@ struct ContentView: View {
         .onChange(of: model.history.entries) { model.reconcileWithHistory() }
         // Closing the window saves any edits in progress.
         .onDisappear { model.endEditing() }
+        // Save edits when the app moves to the background or quits, not only when the window closes.
+        .onChange(of: scenePhase) { if scenePhase != .active { model.saveDraft() } }
+        #if os(macOS)
+        .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
+            model.endEditing()
+        }
+        #endif
         .fileImporter(isPresented: $isImporting, allowedContentTypes: [.audio],
                       allowsMultipleSelection: true) { result in
             switch result {
@@ -190,7 +198,7 @@ struct ContentView: View {
                                 .lineSpacing(6)
                                 .textSelection(.enabled)
                                 .frame(maxWidth: .infinity, alignment: .leading)
-                                .id(model.transcript)
+                                .id(model.contentVersion)
                         }
                     }
                     .frame(maxWidth: 720, alignment: .leading)
@@ -256,7 +264,7 @@ struct ContentView: View {
             .lineSpacing(10)
             .textSelection(.enabled)
             .frame(maxWidth: .infinity, alignment: .leading)
-            .id(model.transcript)
+            .id(model.contentVersion)
     }
 
     private var statusBar: some View {
@@ -291,7 +299,7 @@ struct ContentView: View {
                     Text("On-device transcription")
                     Spacer(minLength: 8)
                     if let duration = model.audioDuration, let time = model.processingTime {
-                        Text(String(format: "%.1f s audio · %.2f s processing", duration, time))
+                        Text("\(DisplayFormat.duration(duration)) audio · \(DisplayFormat.processingTime(time)) processing")
                             .monospacedDigit()
                     }
                 }
@@ -314,7 +322,7 @@ struct ContentView: View {
                         .textSelection(.enabled)
                 }
                 if let duration = model.audioDuration {
-                    LabeledContent("Duration", value: String(format: "%.1f seconds", duration))
+                    LabeledContent("Duration", value: DisplayFormat.duration(duration))
                 }
                 if !model.fileName.isEmpty {
                     LabeledContent("Language", value: languageDescription)
@@ -324,7 +332,7 @@ struct ContentView: View {
                     Button("Revert to Original…") { isConfirmingRevert = true }
                 }
                 if let time = model.processingTime {
-                    LabeledContent("Processing", value: String(format: "%.2f seconds", time))
+                    LabeledContent("Processing", value: DisplayFormat.processingTime(time))
                 }
                 Toggle("Show Timestamps", isOn: $showTimestamps)
                     .disabled(model.cues.isEmpty)
@@ -342,8 +350,12 @@ struct ContentView: View {
             }
 
             Section("Languages") {
-                Link("Supported Languages", destination: URL(string: "https://desertant.com/models/voz/")!)
-                Text("Voz supports 25 languages. Chinese is not supported.")
+                DisclosureGroup("\(DisplayFormat.supportedLanguageNames().count) Supported Languages") {
+                    Text(DisplayFormat.supportedLanguageNames().formatted(.list(type: .and)))
+                        .font(.callout)
+                        .textSelection(.enabled)
+                }
+                Text("Chinese, Japanese, Korean, and other languages aren’t supported. The app warns before transcribing them.")
                     .font(.callout)
                     .foregroundStyle(.secondary)
             }
@@ -358,10 +370,7 @@ struct ContentView: View {
         }
         .formStyle(.grouped)
         // Refresh macOS accessibility values when the inspector’s data changes.
-        .id(model.fileName)
-        .id(model.isReady)
-        .id(model.processingTime)
-        .id(model.editedDate)
+        .id(InspectorIdentity(content: model.contentVersion, isReady: model.isReady))
         .confirmationDialog("Revert to the original transcript?", isPresented: $isConfirmingRevert) {
             Button("Revert", role: .destructive) { Task { await model.revertToOriginal() } }
         } message: {
@@ -397,4 +406,10 @@ struct TranscriptDocument: FileDocument {
     func fileWrapper() -> FileWrapper {
         FileWrapper(regularFileWithContents: Data(text.utf8))
     }
+}
+
+/// Rebuilds Recording Info, refreshing macOS accessibility values, when what it shows changes.
+private struct InspectorIdentity: Hashable {
+    let content: Int
+    let isReady: Bool
 }

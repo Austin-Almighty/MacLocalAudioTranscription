@@ -1,8 +1,6 @@
-import DesertAnt
 import Foundation
 import Observation
 import os
-import UniformTypeIdentifiers
 import Voz
 
 /// A recording that sounds like a language Voz doesn’t support, waiting for the person to decide.
@@ -33,6 +31,9 @@ final class TranscriptionModel {
     private(set) var editedDate: Date?
     /// The text being edited, or nil when not editing.
     private(set) var draft: String?
+    /// Changes whenever the shown transcript’s text does, so views can reset cheaply instead of
+    /// comparing the whole transcript.
+    private(set) var contentVersion = 0
     private(set) var transcriptionProgress: Double?
     var errorMessage: String?
 
@@ -184,11 +185,7 @@ final class TranscriptionModel {
         }
 
         do {
-            guard url.isFileURL,
-                  FileManager.default.isReadableFile(atPath: url.path),
-                  try url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile == true else {
-                throw CocoaError(.fileReadNoPermission)
-            }
+            try ImportError.check(url)
             let language: DetectedLanguage?
             switch check {
             case .identify:
@@ -213,6 +210,7 @@ final class TranscriptionModel {
             // Save any edits to the entry they belong to before the new result replaces it.
             endEditing()
             transcript = result.text
+            contentVersion += 1
             cues = Subtitles.cues(from: result.words)
             detectedLanguage = language
             fileName = url.lastPathComponent
@@ -357,6 +355,7 @@ final class TranscriptionModel {
         do {
             try history.update(id, TranscriptRecord(transcript: draft, cues: edited), editedAt: now)
             transcript = draft
+            contentVersion += 1
             cues = edited
             editedDate = now
         } catch {
@@ -389,6 +388,7 @@ final class TranscriptionModel {
     }
 
     private func show(_ entry: HistoryEntry?, _ record: TranscriptRecord?) {
+        contentVersion += 1
         selection = entry?.id
         transcript = record?.transcript ?? ""
         cues = record?.cues ?? []
@@ -430,65 +430,5 @@ final class TranscriptionModel {
     private func prepareLanguageCheck() {
         let languages = languages
         Task.detached(priority: .utility) { await languages.prepare() }
-    }
-}
-
-/// Shares one recognizer across all windows so each window doesn’t load its own copy of the model.
-@MainActor
-@Observable
-final class RecognizerStore {
-    static let shared = RecognizerStore()
-
-    @ObservationIgnored private var loading: Task<Voz, any Error>?
-    private(set) var isLoaded = false
-    /// Completed fraction of the model download, or nil when no download is in progress.
-    private(set) var downloadProgress: Double?
-
-    func recognizer() async throws -> Voz {
-        if let loading { return try await loading.value }
-        // Use the README’s public-API-only configuration before the first model load.
-        DesertAnt.fasterNeuralEngineCompile = false
-        let downloading = !Voz.isDownloaded()
-        if downloading { downloadProgress = 0 }
-        defer { downloadProgress = nil }
-        let task = Task {
-            try await Voz { progress in
-                guard downloading else { return }
-                Task { @MainActor [weak self] in self?.reportDownload(progress.fraction) }
-            }
-        }
-        loading = task
-        do {
-            let voz = try await task.value
-            isLoaded = true
-            return voz
-        } catch {
-            // Let a later request retry after a failed download or load.
-            loading = nil
-            throw error
-        }
-    }
-
-    func reportDownload(_ fraction: Double) {
-        // Ignore updates that arrive after the download has finished.
-        guard let current = downloadProgress else { return }
-        downloadProgress = max(current, min(1, fraction))
-    }
-}
-
-/// Sorts dropped or chosen files into recordings and everything else.
-enum AudioFiles {
-    static func partition(_ urls: [URL]) -> (audio: [URL], rejected: [URL]) {
-        var audio: [URL] = [], rejected: [URL] = []
-        for url in urls {
-            let type = (try? url.resourceValues(forKeys: [.contentTypeKey]).contentType)
-                ?? UTType(filenameExtension: url.pathExtension)
-            if url.isFileURL, type?.conforms(to: .audio) == true {
-                audio.append(url)
-            } else {
-                rejected.append(url)
-            }
-        }
-        return (audio, rejected)
     }
 }

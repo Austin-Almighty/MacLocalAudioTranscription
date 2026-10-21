@@ -62,7 +62,7 @@ struct HistorySidebar: View {
             Text(entry.fileName)
                 .lineLimit(1)
                 .truncationMode(.middle)
-            Text("\(entry.date.formatted(date: .abbreviated, time: .shortened)) · \(Duration.seconds(entry.audioDuration).formatted(.units(allowed: [.hours, .minutes, .seconds], width: .narrow)))")
+            Text("\(entry.date.formatted(date: .abbreviated, time: .shortened)) · \(DisplayFormat.duration(entry.audioDuration))")
                 .font(.caption)
                 .foregroundStyle(.secondary)
                 .lineLimit(1)

@@ -38,6 +38,9 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Language check | Identify each English fixture with the real Ear model | Detect reliable English and transcribe normally. |
 | Language check | Transcribe English, then import the Chinese fixture, then choose Transcribe Anyway | Warn before transcribing while keeping the English result; Transcribe Anyway completes and records Chinese. |
 | Language check | Language identification throws | Transcribe normally with no language shown. |
+| Formatting | Format recording lengths under and over a minute and hour, processing times, and Taiwan and German locales | “5.8 s”, “11m 28s”, “2h 2m 5s”, “0.13 s”; “11分28秒” and “5,8 s” in other locales. |
+| Formatting | List the supported languages | 25 names in the person’s language, sorted, including English and not Chinese. |
+| File validation | Import a web address, a missing file, a folder, and an unreadable file | Each error names the file and says why: not on this device, no longer exists, a folder, or no permission. |
 | History | Save entries with a Unicode file name, cues, and with and without a language, then reopen the store | A new session lists them newest first and reloads each transcript and cue exactly. |
 | History | Delete one entry, then clear history | Both files of a deleted entry are removed; clearing leaves no saved transcripts. |
 | History | Clear history with damaged, newer-format, and orphaned transcript files present; save when the summary can’t be written | Clearing removes every history file; a failed save leaves no transcript file behind. |
