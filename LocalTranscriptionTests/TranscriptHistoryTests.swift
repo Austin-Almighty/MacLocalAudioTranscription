@@ -46,6 +46,16 @@ final class TranscriptHistoryTests {
         #expect(try await reopened.record(for: silence.id) == emptyRecord)
     }
 
+    @Test func keepsTheNamesAndTermsUsed() async throws {
+        let withTerms = HistoryEntry(id: UUID(), fileName: "names.m4a", date: Date(timeIntervalSince1970: 1_000),
+                                     audioDuration: 6.4, processingTime: 0.1, language: english,
+                                     vocabulary: ["Siobhan", "Patek Philippe"])
+        try history.save(withTerms, emptyRecord)
+        let reopened = TranscriptHistory(directory: directory)
+        await reopened.load()
+        #expect(reopened.entries.first?.vocabulary == ["Siobhan", "Patek Philippe"])
+    }
+
     @Test func listsNewestFirstWhateverTheSaveOrder() async throws {
         let middle = entry("b.wav", at: 2_000), oldest = entry("a.wav", at: 1_000), newest = entry("c.wav", at: 3_000)
         for item in [middle, oldest, newest] { try history.save(item, emptyRecord) }

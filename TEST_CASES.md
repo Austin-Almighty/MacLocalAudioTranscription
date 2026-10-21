@@ -45,6 +45,10 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | History | Delete one entry, then clear history | Both files of a deleted entry are removed; clearing leaves no saved transcripts. |
 | History | Clear history with damaged, newer-format, and orphaned transcript files present; save when the summary can’t be written | Clearing removes every history file; a failed save leaves no transcript file behind. |
 | History | Transcribe three seconds of silence | Nothing is recognized and nothing is saved. |
+| Vocabulary | Parse terms with commas, line breaks, extra spaces, repeats, different case, and Unicode | Keep phrases and case, drop blanks and exact repeats. |
+| Vocabulary | Change the terms after queuing a file | The queued file keeps the terms entered when it was added. |
+| Vocabulary | Save and reopen an entry with terms | The terms are kept with the entry. |
+| Vocabulary | Transcribe `names.m4a` without terms, then with “Siobhan, Patek Philippe” | “Siobhan” appears only with the terms; the terms are saved and shown only for that entry. |
 | Editing | Realign cues after no change, a typo, a replaced first word, insertions mid-text and at the start, a deleted cue, a pasted replacement, empty text, line breaks, and Unicode | Timings never change; words land in the cue they replace or follow; emptied cues are dropped; pasted text is spread across cues. |
 | Editing | Grow a cue past one line, then past two | Wrap onto two lines while it fits; beyond that keep every word on one line. |
 | Editing | Edit twice, reopen history, revert; delete an edited entry | The latest edit and its date persist; the original is kept from the first edit only and restored by Revert; deleting removes all three files. |
@@ -73,7 +77,7 @@ The format fixtures are versions of the same locally synthesized recording, gene
 
 > This is a local speech recognition test. The quick brown fox jumps over the lazy dog.
 
-FFmpeg is needed only to regenerate the fixtures; running the tests uses the bundled files. The Chinese text and file name test Unicode handling, not Chinese speech recognition. Voz does not support Chinese speech. `speech-zh.m4a` is 8.5 seconds of Taiwan Mandarin synthesized with macOS’s Eddy (zh_TW) voice and converted with `afconvert`; Ear identifies it as Chinese with full confidence, so it exercises the unsupported-language warning.
+FFmpeg is needed only to regenerate the fixtures; running the tests uses the bundled files. The Chinese text and file name test Unicode handling, not Chinese speech recognition. Voz does not support Chinese speech. `names.m4a` is 6.4 seconds of Samantha saying names Voz misspells without help (“Siobhan” becomes “Siobon”). `speech-zh.m4a` is 8.5 seconds of Taiwan Mandarin synthesized with macOS’s Eddy (zh_TW) voice and converted with `afconvert`; Ear identifies it as Chinese with full confidence, so it exercises the unsupported-language warning.
 
 ## Manual UI and device checks
 

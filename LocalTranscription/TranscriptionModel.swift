@@ -7,6 +7,7 @@ import Voz
 struct LanguageWarning: Equatable {
     let url: URL
     let language: DetectedLanguage
+    var vocabulary: [String] = []
 }
 
 @MainActor
@@ -36,6 +37,10 @@ final class TranscriptionModel {
     private(set) var contentVersion = 0
     private(set) var transcriptionProgress: Double?
     var errorMessage: String?
+    /// Names and terms for the recordings imported next, as typed.
+    var vocabularyText = ""
+    /// The names and terms used for the shown transcript.
+    private(set) var shownVocabulary: [String] = []
 
     @ObservationIgnored private let recognizers: RecognizerStore
     @ObservationIgnored private let languages: any LanguageIdentifying
@@ -99,7 +104,7 @@ final class TranscriptionModel {
     /// Files added while a transcription runs join the queue.
     func transcribe(_ urls: [URL]) async {
         if !isProcessingQueue && languageWarning == nil { errorMessage = nil }
-        queue += urls.map { QueuedFile(url: $0, check: .identify) }
+        queue += urls.map { QueuedFile(url: $0, check: .identify, vocabulary: vocabulary) }
         await processQueue()
     }
 
@@ -112,7 +117,7 @@ final class TranscriptionModel {
             appendError("\(names) \(rejected.count == 1 ? "isn’t an audio file" : "aren’t audio files") and wasn’t transcribed.")
         }
         guard !audio.isEmpty else { return false }
-        queue += audio.map { QueuedFile(url: $0, check: .identify) }
+        queue += audio.map { QueuedFile(url: $0, check: .identify, vocabulary: vocabulary) }
         await processQueue()
         return true
     }
@@ -122,7 +127,7 @@ final class TranscriptionModel {
     /// warning, before running its action.
     func transcribeAnyway(_ warning: LanguageWarning) async {
         if languageWarning == warning { languageWarning = nil }
-        queue.insert(QueuedFile(url: warning.url, check: .accepted(warning.language)), at: 0)
+        queue.insert(QueuedFile(url: warning.url, check: .accepted(warning.language), vocabulary: warning.vocabulary), at: 0)
         await processQueue()
     }
 
@@ -151,6 +156,8 @@ final class TranscriptionModel {
     private struct QueuedFile {
         let url: URL
         let check: LanguageCheck
+        /// Captured when queued, so editing the list affects only later imports.
+        let vocabulary: [String]
     }
 
     /// Transcribes queued files in order. Waits for model preparation, and pauses while a
@@ -162,7 +169,7 @@ final class TranscriptionModel {
         if let preparing { await preparing.value }
         while languageWarning == nil, !queue.isEmpty {
             let file = queue.removeFirst()
-            await transcribe(file.url, language: file.check)
+            await transcribe(file.url, language: file.check, vocabulary: file.vocabulary)
         }
     }
 
@@ -170,7 +177,10 @@ final class TranscriptionModel {
         errorMessage = errorMessage.map { $0 + "\n\n" + message } ?? message
     }
 
-    private func transcribe(_ url: URL, language check: LanguageCheck) async {
+    /// The names and terms currently entered for the next imports.
+    var vocabulary: [String] { Vocabulary.terms(from: vocabularyText) }
+
+    private func transcribe(_ url: URL, language check: LanguageCheck, vocabulary: [String]) async {
         status = "Opening audio…"
         operation += 1
         let current = operation
@@ -193,7 +203,7 @@ final class TranscriptionModel {
                 language = await identifyLanguage(url)
                 // Ask before loading the model, so unsupported speech never costs a model load.
                 if let language, language.isUnsupported {
-                    languageWarning = LanguageWarning(url: url, language: language)
+                    languageWarning = LanguageWarning(url: url, language: language, vocabulary: vocabulary)
                     return
                 }
             case .accepted(let accepted):
@@ -202,7 +212,7 @@ final class TranscriptionModel {
             let recognizer = try await loadModel()
             status = "Transcribing on device…"
             transcriptionProgress = 0
-            let result = try await recognizer.transcribe(url) { progress in
+            let result = try await recognizer.transcribe(url, vocabulary: vocabulary) { progress in
                 Task { @MainActor [weak self] in
                     self?.reportProgress(progress.fractionCompleted, for: current)
                 }
@@ -217,6 +227,7 @@ final class TranscriptionModel {
             audioDuration = result.duration
             processingTime = result.processingTime
             editedDate = nil
+            shownVocabulary = vocabulary
             saveToHistory()
             prepareLanguageCheck()
         } catch {
@@ -234,7 +245,8 @@ final class TranscriptionModel {
         }
         let entry = HistoryEntry(id: UUID(), fileName: fileName, date: .now,
                                  audioDuration: audioDuration ?? 0, processingTime: processingTime ?? 0,
-                                 language: detectedLanguage)
+                                 language: detectedLanguage,
+                                 vocabulary: shownVocabulary.isEmpty ? nil : shownVocabulary)
         do {
             try history.save(entry, TranscriptRecord(transcript: transcript, cues: cues))
             selection = entry.id
@@ -397,6 +409,7 @@ final class TranscriptionModel {
         audioDuration = entry?.audioDuration
         processingTime = entry?.processingTime
         editedDate = entry?.edited
+        shownVocabulary = entry?.vocabulary ?? []
     }
 
     func reportProgress(_ fraction: Double, for operation: Int) {

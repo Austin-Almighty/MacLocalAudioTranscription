@@ -327,6 +327,9 @@ struct ContentView: View {
                 if !model.fileName.isEmpty {
                     LabeledContent("Language", value: languageDescription)
                 }
+                if !model.shownVocabulary.isEmpty {
+                    LabeledContent("Names and Terms", value: model.shownVocabulary.formatted(.list(type: .and)))
+                }
                 if let edited = model.editedDate {
                     LabeledContent("Edited", value: edited.formatted(date: .abbreviated, time: .shortened))
                     Button("Revert to Original…") { isConfirmingRevert = true }
@@ -336,6 +339,22 @@ struct ContentView: View {
                 }
                 Toggle("Show Timestamps", isOn: $showTimestamps)
                     .disabled(model.cues.isEmpty)
+            }
+
+            Section {
+                TextField("Names and terms", text: $model.vocabularyText,
+                          prompt: Text("Siobhan, Patek Philippe"), axis: .vertical)
+                    .lineLimit(2...5)
+                    .labelsHidden()
+                    .accessibilityLabel("Names and terms for the next recordings")
+            } header: {
+                Text("Names and Terms")
+            } footer: {
+                Text(model.vocabulary.count > Vocabulary.suggestedLimit
+                     ? "Long lists can make transcripts worse. Keep only names and terms these recordings contain."
+                     : "Used for the recordings you import next. List people, places, and terms they mention, separated by commas or new lines.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
             }
 
             Section("Speech Recognition") {

@@ -45,6 +45,27 @@ final class CachedVozIntegrationTests {
         #expect(record == TranscriptRecord(transcript: model.transcript, cues: model.cues))
     }
 
+    @Test func namesAndTermsSteerRecognitionAndAreSaved() async throws {
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier(), history: history)
+        let names = try #require(Bundle(for: FixtureBundle.self)
+            .url(forResource: "names", withExtension: "m4a", subdirectory: "Fixtures"))
+        await model.transcribe(names)
+        try #require(model.errorMessage == nil)
+        #expect(!model.transcript.contains("Siobhan"))
+        let plain = try #require(model.selection)
+
+        model.vocabularyText = "Siobhan, Patek Philippe"
+        await model.transcribe(names)
+        #expect(model.errorMessage == nil)
+        #expect(model.transcript.contains("Siobhan"))
+        #expect(model.shownVocabulary == ["Siobhan", "Patek Philippe"])
+        #expect(history.entries.first?.vocabulary == ["Siobhan", "Patek Philippe"])
+
+        await model.select(plain)
+        #expect(model.shownVocabulary.isEmpty)
+        #expect(history.entries.first(where: { $0.id == plain })?.vocabulary == nil)
+    }
+
     @Test func aResultArrivingMidEditSavesTheDraftToItsOwnEntry() async throws {
         let model = TranscriptionModel(languages: FakeLanguageIdentifier(), history: history)
         await model.transcribe(try fixture("aiff"))

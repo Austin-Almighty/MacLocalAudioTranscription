@@ -16,6 +16,8 @@ struct HistoryEntry: Codable, Identifiable, Equatable, Sendable {
     let language: DetectedLanguage?
     /// When the transcript was last edited, or nil if it is as transcribed.
     var edited: Date?
+    /// Names and terms given to Voz for this recording, if any.
+    var vocabulary: [String]?
 }
 
 /// The full text and timed cues of one transcription.

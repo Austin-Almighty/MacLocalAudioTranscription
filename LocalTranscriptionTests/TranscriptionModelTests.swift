@@ -125,3 +125,28 @@ struct ImportErrorTests {
         }
     }
 }
+
+struct VocabularyTests {
+    @Test func splitsOnCommasAndLineBreaksKeepingPhrasesAndCase() {
+        #expect(Vocabulary.terms(from: "SoFi, Patek   Philippe\nKubernetes,, SoFi ,  \n\n sofi") == ["SoFi", "Patek Philippe", "Kubernetes", "sofi"])
+        #expect(Vocabulary.terms(from: "  ,\n ").isEmpty)
+        #expect(Vocabulary.terms(from: "訪談, café 🎙️") == ["訪談", "café 🎙️"])
+    }
+}
+
+@MainActor
+struct VocabularyQueueTests {
+    @Test func eachImportKeepsTheVocabularyEnteredWhenItWasQueued() async throws {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+        try Data("audio".utf8).write(to: file)
+        defer { try? FileManager.default.removeItem(at: file) }
+        let chinese = DetectedLanguage(code: "zh", confidence: 0.97, isReliable: true)
+        let model = TranscriptionModel(recognizers: RecognizerStore(),
+                                       languages: FakeLanguageIdentifier(result: chinese), history: .temporary())
+        model.vocabularyText = "Siobhan, Patek Philippe"
+        await model.transcribe(file)
+        model.vocabularyText = "Something else"
+        #expect(model.languageWarning?.vocabulary == ["Siobhan", "Patek Philippe"])
+        #expect(model.vocabulary == ["Something else"])
+    }
+}
