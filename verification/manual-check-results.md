@@ -10,7 +10,9 @@ The working model cache and the user’s app session were preserved. UI checks u
 | --- | --- |
 | Cached offline inference (UI-10) | **Passed at the production model layer.** Loaded Voz and transcribed the 5.79-second English fixture in 0.131 seconds with outbound networking denied. Text matched the expected sentence. See [offline-cached.json](offline-cached.json). |
 | Empty cache while offline (UI-09) | **Passed.** Used `CFFIXED_USER_HOME` to isolate Foundation’s cache. Preparation reported a network error, left `isBusy = false` and `isReady = false`, and created no transcript. The native app also displayed the error and restored its enabled controls. See [offline-cold.json](offline-cold.json). |
-| Download recovery (UI-09) | **Passed for initial connection failure.** A new online verifier using that same isolated cache downloaded and loaded the model, then transcribed Spanish successfully. The still-running offline UI instance subsequently loaded that now-complete cache when its Download Model action was retried. See [online-retry.json](online-retry.json). This does not test interruption halfway through transferring a weight file. |
+| Download recovery (UI-09) | **Passed for initial connection failure.** A new online verifier using that same isolated cache downloaded and loaded the model, then transcribed Spanish successfully. The still-running offline UI instance subsequently loaded that now-complete cache when its Download Model action was retried. See [online-retry.json](online-retry.json). Interruption partway through a weight file was checked separately on October 22 (next two rows). |
+| Connection lost mid-file (UI-09) | **Passed, October 22, 2026, with an injected failure.** In a new isolated home, the verifier added a URL protocol to the SDK’s download session that relayed the real download of the decoder’s 12.3 MB `weight.bin` and then failed it after 6.36 MB with `NSURLErrorNetworkConnectionLost`, carrying CFNetwork’s description for that error. The Mac’s network was not changed. The first preparation ended with “The network connection was lost.”, not busy, not ready, no progress shown, no manifest, and no `.part` file. Preparing again in the same process, as the Download Model button does, completed the download, skipped the already verified 312 MB encoder weights, and transcribed the English fixture. Six files the Hub lists without hashes (the `metadata.json` and `model.mil` of each model part, 2 KB to 820 KB) were downloaded again. See [download-drop-retry.json](download-drop-retry.json). |
+| Download killed mid-file (UI-09) | **Passed, October 22, 2026.** In another new home, the verifier killed itself with SIGKILL at 95.2% of the download, inside the decoder weights, as a force quit would. Afterwards `Voz.isDownloaded()` was false, no manifest existed, and the 14 files completed before the kill matched the hashes in the final manifest; the decoder weights, `meta.json`, `vocab.json`, and `embedding.f16` were absent. Rerunning in the same home left the encoder and mel weights untouched, downloaded the rest, and transcribed the fixture. At launch the app loads the model only when `Voz.isDownloaded()` is true, so an interrupted cache shows Not downloaded and Download Model; the app itself was not opened against it. See [download-interrupt-killed.json](download-interrupt-killed.json), [download-interrupt-cache.json](download-interrupt-cache.json), [download-interrupt-retry.json](download-interrupt-retry.json), and [download-interrupt-retry-cache.json](download-interrupt-retry-cache.json). |
 | Long, noisy Spanish offline (UI-12) | **Passed.** Transcribed 1,200 seconds of repeated Spanish speech with added pink noise in 15.4755 seconds. Required Spanish phrases appeared in the result. A second import attempted while the production model was busy did not replace the first recording. See [offline-long-spanish.json](offline-long-spanish.json). |
 | Cached launch (UI-01) | **Passed.** Automatically loaded the model, displayed Ready and No Recording, and enabled Import. |
 | Native import and metadata (UI-02) | **Passed.** ⌘O opened the native panel. Imported AIFF speech, obtained the expected transcript, and checked filename, duration, and processing time. |
@@ -34,14 +36,15 @@ The visual inspector was correct, but macOS’s accessibility tree retained old 
 
 ## Reproduce the process checks
 
-From the project root, first build the Debug SDK objects using the test command in [TEST_CASES.md](../TEST_CASES.md), then compile the verifier without optimization so its preconditions remain enabled:
+From the project root, first build the Debug SDK objects using the test command in [TEST_CASES.md](../TEST_CASES.md), then compile the verifier without optimization so its preconditions remain enabled. It builds the app’s non-UI sources alongside the SDK objects:
 
 ```sh
 mkdir -p build/manual-checks build/verification/ModuleCache
 xcrun swiftc -parse-as-library -swift-version 6 -target arm64-apple-macos15.0 \
   -module-cache-path build/verification/ModuleCache \
   -I build/DerivedData/Build/Products/Debug \
-  Scripts/verify-offline.swift LocalTranscription/TranscriptionModel.swift \
+  Scripts/verify-offline.swift \
+  $(ls LocalTranscription/*.swift | grep -v -e ContentView -e HistorySidebar -e LocalTranscriptionApp) \
   build/DerivedData/Build/Products/Debug/*.o \
   -o build/manual-checks/check-offline
 
@@ -58,7 +61,32 @@ CFFIXED_USER_HOME="$PWD/build/manual-checks/offline-repro-home" \
 CFFIXED_USER_HOME="$PWD/build/manual-checks/offline-repro-home" \
   build/manual-checks/check-offline online \
   LocalTranscriptionTests/Fixtures/speech.aiff verification/online-retry.json
+
+# Mid-file interruption: downloads about 320 MB into another new test home, then kills
+# itself at 95% of the download (inside the decoder weights). Exit status 137 is expected.
+CFFIXED_USER_HOME="$PWD/build/manual-checks/interrupt-home" \
+  build/manual-checks/check-offline interrupt \
+  LocalTranscriptionTests/Fixtures/speech.aiff verification/download-interrupt-killed.json
+# Retry in the same home: resumes from the verified files, then transcribes. Run inspect
+# before and after the retry to record the cache's files, hashes, and modification times.
+CFFIXED_USER_HOME="$PWD/build/manual-checks/interrupt-home" \
+  build/manual-checks/check-offline inspect \
+  LocalTranscriptionTests/Fixtures/speech.aiff verification/download-interrupt-cache.json
+CFFIXED_USER_HOME="$PWD/build/manual-checks/interrupt-home" \
+  build/manual-checks/check-offline online \
+  LocalTranscriptionTests/Fixtures/speech.aiff verification/download-interrupt-retry.json
+CFFIXED_USER_HOME="$PWD/build/manual-checks/interrupt-home" \
+  build/manual-checks/check-offline inspect \
+  LocalTranscriptionTests/Fixtures/speech.aiff verification/download-interrupt-retry-cache.json
+
+# Connection lost mid-file: another new home. Fails the decoder weights once after about
+# 6 MB, then prepares again in the same process and transcribes.
+CFFIXED_USER_HOME="$PWD/build/manual-checks/drop-home" \
+  build/manual-checks/check-offline drop \
+  LocalTranscriptionTests/Fixtures/speech.aiff verification/download-drop-retry.json
 ```
+
+Both interruptions leave the partly transferred file, about 6.4 MB here, as `CFNetworkDownload_*.tmp` in the user temp folder (`getconf DARWIN_USER_TEMP_DIR`), outside the model cache and outside `CFFIXED_USER_HOME`. URLSession keeps it for resuming, but the SDK restarts each file from the beginning and never uses it, so an interruption during the 312 MB encoder weights could leave up to that much behind until macOS clears its temp folder. Delete these files after running the checks.
 
 The cold and online modes deliberately reject an already complete cache. Choose another new test-home path when repeating the pair. The helper verifies the app’s actual `TranscriptionModel`, rather than a substitute recognizer. Compile and execute outside an enclosing sandbox that prevents Swift macro plugins, Core ML services, or nested `sandbox-exec` from starting; no system-wide network changes are required.
 

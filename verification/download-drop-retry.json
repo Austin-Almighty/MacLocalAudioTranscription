@@ -1,0 +1,183 @@
+{
+  "afterFailure" : {
+    "files" : {
+      "decoder.mlmodelc\/analytics\/coremldata.bin" : {
+        "modified" : 1792658822.9130898,
+        "sha256" : "cc2be0dbcd0c7d8d915aa3621869ea074791c432ba7b4bb6e029c483087f7189",
+        "size" : 243
+      },
+      "decoder.mlmodelc\/coremldata.bin" : {
+        "modified" : 1792658823.3319199,
+        "sha256" : "2d7a5210e91e4e3b25c547db4b76ea14bf769db9f71e7659c027008041e38d2d",
+        "size" : 1093
+      },
+      "decoder.mlmodelc\/metadata.json" : {
+        "modified" : 1792658823.4279606,
+        "sha256" : "798639c54e4eb71bcfa5dbc15b62c0a341c37b265d1a9c879c28a40b06549875",
+        "size" : 18528
+      },
+      "decoder.mlmodelc\/model.mil" : {
+        "modified" : 1792658823.5235205,
+        "sha256" : "1f331acb4a4bb999c792db0a3725d790c046311ab9941ddbe0ee7e3418ae1e14",
+        "size" : 99410
+      },
+      "encoder.mlmodelc\/analytics\/coremldata.bin" : {
+        "modified" : 1792658809.1936579,
+        "sha256" : "983e1e4e31f6ef386fba8d35202984c6ec11ff688f62cf3fde57dd957d40ff27",
+        "size" : 243
+      },
+      "encoder.mlmodelc\/coremldata.bin" : {
+        "modified" : 1792658809.5099092,
+        "sha256" : "02327c1dc4dc362dfcb1061f785a24ee3bcb86853ecaa818511ae71ca2e2a0b8",
+        "size" : 430
+      },
+      "encoder.mlmodelc\/metadata.json" : {
+        "modified" : 1792658809.6896567,
+        "sha256" : "81e00f4d507edf2e6d045a9826362f3c6e314e60ef16a28aef4c99d693876991",
+        "size" : 2739
+      },
+      "encoder.mlmodelc\/model.mil" : {
+        "modified" : 1792658809.7978826,
+        "sha256" : "974c88c39c840c21b031f10529943516d1d8469535f0ddc3571cddaab29574e4",
+        "size" : 820490
+      },
+      "encoder.mlmodelc\/weights\/weight.bin" : {
+        "modified" : 1792658821.0363994,
+        "sha256" : "72b6e867cb3176cea36fc1410622b7bfd50043e80eafbaab03ae0a53382908c2",
+        "size" : 312039808
+      },
+      "mel.mlmodelc\/analytics\/coremldata.bin" : {
+        "modified" : 1792658821.6107481,
+        "sha256" : "d1cabbea932a1be1b53a1adc0d434d5a7a1f097d9679d3d995183238773de472",
+        "size" : 243
+      },
+      "mel.mlmodelc\/coremldata.bin" : {
+        "modified" : 1792658821.9750323,
+        "sha256" : "e6598e764b01f8ba06fa787f2bc22d7707f97c2954492d77a2736800fd006f5d",
+        "size" : 405
+      },
+      "mel.mlmodelc\/metadata.json" : {
+        "modified" : 1792658822.0728207,
+        "sha256" : "6be5be2c02370c3a218b712046ea50c8486f4e20fd70558458d5980d1c296e53",
+        "size" : 2215
+      },
+      "mel.mlmodelc\/model.mil" : {
+        "modified" : 1792658822.1732049,
+        "sha256" : "aae23c58b6aa3093063f75a392d9f44deb324804c3fbb58fa3e55bb7f371ece1",
+        "size" : 9728
+      },
+      "mel.mlmodelc\/weights\/weight.bin" : {
+        "modified" : 1792658822.5956373,
+        "sha256" : "34f8a1bcf01e6a6ae053efe012cd189e0c38e9dca65660f199740ce9a0958f95",
+        "size" : 826688
+      }
+    },
+    "root" : "\/Users\/autsintliao\/claude_workspace\/local_transcription\/build\/manual-checks\/drop-home\/Library\/Caches\/desert-ant-models\/desert-ant-labs\/voz\/v0.4.0"
+  },
+  "afterRetry" : {
+    "files" : {
+      ".dal-meta\/manifest" : {
+        "modified" : 1792658827.054666,
+        "sha256" : "43e9d484697dc4c298a06c386f8ca6df3ee1adb8913fe172c2854492a02d8176",
+        "size" : 1930
+      },
+      "decoder.mlmodelc\/analytics\/coremldata.bin" : {
+        "modified" : 1792658822.9130898,
+        "sha256" : "cc2be0dbcd0c7d8d915aa3621869ea074791c432ba7b4bb6e029c483087f7189",
+        "size" : 243
+      },
+      "decoder.mlmodelc\/coremldata.bin" : {
+        "modified" : 1792658823.3319199,
+        "sha256" : "2d7a5210e91e4e3b25c547db4b76ea14bf769db9f71e7659c027008041e38d2d",
+        "size" : 1093
+      },
+      "decoder.mlmodelc\/metadata.json" : {
+        "modified" : 1792658825.1949079,
+        "sha256" : "798639c54e4eb71bcfa5dbc15b62c0a341c37b265d1a9c879c28a40b06549875",
+        "size" : 18528
+      },
+      "decoder.mlmodelc\/model.mil" : {
+        "modified" : 1792658825.2934947,
+        "sha256" : "1f331acb4a4bb999c792db0a3725d790c046311ab9941ddbe0ee7e3418ae1e14",
+        "size" : 99410
+      },
+      "decoder.mlmodelc\/weights\/weight.bin" : {
+        "modified" : 1792658826.1265264,
+        "sha256" : "12ab4cbb83155dbaf3d9832f524c23b803e3e266863d9c6f3d58e1d88577e130",
+        "size" : 12277132
+      },
+      "embedding.f16" : {
+        "modified" : 1792658827.0462744,
+        "sha256" : "07163e5f6f8a68f9ffeed7a8ff770c68098c2db216232321912188bd614b9a72",
+        "size" : 10487040
+      },
+      "encoder.mlmodelc\/analytics\/coremldata.bin" : {
+        "modified" : 1792658809.1936579,
+        "sha256" : "983e1e4e31f6ef386fba8d35202984c6ec11ff688f62cf3fde57dd957d40ff27",
+        "size" : 243
+      },
+      "encoder.mlmodelc\/coremldata.bin" : {
+        "modified" : 1792658809.5099092,
+        "sha256" : "02327c1dc4dc362dfcb1061f785a24ee3bcb86853ecaa818511ae71ca2e2a0b8",
+        "size" : 430
+      },
+      "encoder.mlmodelc\/metadata.json" : {
+        "modified" : 1792658824.5485427,
+        "sha256" : "81e00f4d507edf2e6d045a9826362f3c6e314e60ef16a28aef4c99d693876991",
+        "size" : 2739
+      },
+      "encoder.mlmodelc\/model.mil" : {
+        "modified" : 1792658824.6624901,
+        "sha256" : "974c88c39c840c21b031f10529943516d1d8469535f0ddc3571cddaab29574e4",
+        "size" : 820490
+      },
+      "encoder.mlmodelc\/weights\/weight.bin" : {
+        "modified" : 1792658821.0363994,
+        "sha256" : "72b6e867cb3176cea36fc1410622b7bfd50043e80eafbaab03ae0a53382908c2",
+        "size" : 312039808
+      },
+      "mel.mlmodelc\/analytics\/coremldata.bin" : {
+        "modified" : 1792658821.6107481,
+        "sha256" : "d1cabbea932a1be1b53a1adc0d434d5a7a1f097d9679d3d995183238773de472",
+        "size" : 243
+      },
+      "mel.mlmodelc\/coremldata.bin" : {
+        "modified" : 1792658821.9750323,
+        "sha256" : "e6598e764b01f8ba06fa787f2bc22d7707f97c2954492d77a2736800fd006f5d",
+        "size" : 405
+      },
+      "mel.mlmodelc\/metadata.json" : {
+        "modified" : 1792658824.9856396,
+        "sha256" : "6be5be2c02370c3a218b712046ea50c8486f4e20fd70558458d5980d1c296e53",
+        "size" : 2215
+      },
+      "mel.mlmodelc\/model.mil" : {
+        "modified" : 1792658825.0877888,
+        "sha256" : "aae23c58b6aa3093063f75a392d9f44deb324804c3fbb58fa3e55bb7f371ece1",
+        "size" : 9728
+      },
+      "mel.mlmodelc\/weights\/weight.bin" : {
+        "modified" : 1792658822.5956373,
+        "sha256" : "34f8a1bcf01e6a6ae053efe012cd189e0c38e9dca65660f199740ce9a0958f95",
+        "size" : 826688
+      },
+      "meta.json" : {
+        "modified" : 1792658826.2372537,
+        "sha256" : "2b5fa951d70cbbab49fccf31836521be8305d0d9557b9bedf45cc8dcdc61b53b",
+        "size" : 584
+      },
+      "vocab.json" : {
+        "modified" : 1792658826.3330204,
+        "sha256" : "3eb2f73e8853dce5156c2ed97c0b1bb84eb4ebd201eb1761d15977fc1ea31490",
+        "size" : 78654
+      }
+    },
+    "root" : "\/Users\/autsintliao\/claude_workspace\/local_transcription\/build\/manual-checks\/drop-home\/Library\/Caches\/desert-ant-models\/desert-ant-labs\/voz\/v0.4.0"
+  },
+  "checkedAt" : "2026-10-22T08:47:15Z",
+  "droppedAfterBytes" : 6360741,
+  "droppedFile" : "decoder.mlmodelc\/weights\/weight.bin",
+  "firstAttemptError" : "The network connection was lost.",
+  "mode" : "drop",
+  "text" : "This is a local speech recognition test. The quick brown fox jumps over the lazy dog"
+}

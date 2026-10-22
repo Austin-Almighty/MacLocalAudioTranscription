@@ -1,0 +1,13 @@
+{
+  "audioSeconds" : 5.7895624999999997,
+  "cacheDirectory" : "\/Users\/autsintliao\/claude_workspace\/local_transcription\/build\/manual-checks\/interrupt-home\/Library\/Caches",
+  "checkedAt" : "2026-10-22T08:47:52Z",
+  "error" : "",
+  "isBusy" : false,
+  "isReady" : true,
+  "mode" : "online",
+  "networkProbeBlocked" : false,
+  "networkProbeError" : "",
+  "processingSeconds" : 0.10436797142028809,
+  "text" : "This is a local speech recognition test. The quick brown fox jumps over the lazy dog"
+}
