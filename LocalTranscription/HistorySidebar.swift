@@ -46,7 +46,6 @@ struct HistorySidebar: View {
             ToolbarItem {
                 Menu("More", systemImage: "ellipsis.circle") {
                     Button("Clear History…", systemImage: "trash", role: .destructive) { isConfirmingClear = true }
-                        .disabled(history.entries.isEmpty)
                 }
             }
         }

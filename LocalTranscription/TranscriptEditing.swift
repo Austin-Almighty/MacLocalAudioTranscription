@@ -38,7 +38,7 @@ enum CueAlignment {
         for (word, cue) in zip(newWords, assignment) { grouped[cue].append(word) }
         return zip(cues, grouped).compactMap { cue, words in
             words.isEmpty ? nil : SubtitleCue(start: cue.start, end: cue.end,
-                                              text: Subtitles.layout(words.joined(separator: " ")))
+                                              text: Subtitles.layout(words.joined(separator: " ")), speaker: cue.speaker)
         }
     }
 

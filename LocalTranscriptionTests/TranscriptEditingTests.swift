@@ -156,6 +156,51 @@ final class TranscriptEditingTests {
         #expect(try await history.record(for: other.id).transcript == "Other.")
     }
 
+    @Test func restoringDeletedTextAfterSavingRestoresItsCueTimings() async throws {
+        let model = try await editedModel()
+        model.beginEditing()
+        for deleted in ["", "This is a local The quick brown fox."] {
+            model.updateDraft(deleted)
+            model.saveDraft()
+            #expect(model.cues.count < cues.count)
+
+            model.updateDraft(transcript)
+            model.saveDraft()
+            #expect(model.cues == cues)
+            #expect(try await history.record(for: entry.id) == record)
+        }
+        model.endEditing()
+    }
+
+    @Test func restoringAnEmptySavedTranscriptAfterReopeningRestoresItsCueTimings() async throws {
+        let model = try await editedModel()
+        model.beginEditing()
+        model.updateDraft("")
+        model.endEditing()
+
+        let reopened = TranscriptHistory(directory: directory)
+        await reopened.load()
+        let editor = TranscriptionModel(recognizers: RecognizerStore(), languages: FakeLanguageIdentifier(), history: reopened)
+        await editor.select(entry.id)
+        #expect(editor.transcript.isEmpty)
+        #expect(editor.cues.isEmpty)
+        editor.beginEditing()
+        editor.updateDraft(transcript)
+        editor.endEditing()
+
+        #expect(editor.cues == cues)
+        #expect(try await reopened.record(for: entry.id) == record)
+    }
+
+    @Test func anUnreadableOriginalIsNotReplacedByTheEditedRecord() throws {
+        try history.save(entry, record)
+        #expect(try history.originalRecord(for: entry.id) == record)
+        try history.update(entry.id, TranscriptRecord(transcript: "Edited.", cues: []), editedAt: .now)
+        try Data("not JSON".utf8).write(to: directory.appending(path: "\(entry.id.uuidString).original.transcript.json"))
+
+        #expect(throws: (any Error).self) { try self.history.originalRecord(for: self.entry.id) }
+    }
+
     @Test func autosavesShortlyAfterTypingStops() async throws {
         let model = try await editedModel()
         model.beginEditing()

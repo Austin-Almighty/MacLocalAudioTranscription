@@ -8,6 +8,7 @@ struct LanguageWarning: Equatable {
     let url: URL
     let language: DetectedLanguage
     var vocabulary: [String] = []
+    var identifySpeakers = false
 }
 
 @MainActor
@@ -15,10 +16,12 @@ struct LanguageWarning: Equatable {
 final class TranscriptionModel {
     private static let logger = Logger(subsystem: "LocalTranscription", category: "Language")
     private static let historyLogger = Logger(subsystem: "LocalTranscription", category: "History")
+    private static let speakerLogger = Logger(subsystem: "LocalTranscription", category: "Speakers")
 
     /// The history entry this window shows, or nil for a new, unsaved, or empty view.
     private(set) var selection: UUID?
     private(set) var transcript = ""
+    private(set) var displayTranscript = ""
     private(set) var cues: [SubtitleCue] = []
     private(set) var detectedLanguage: DetectedLanguage?
     private(set) var languageWarning: LanguageWarning?
@@ -32,6 +35,7 @@ final class TranscriptionModel {
     private(set) var editedDate: Date?
     /// The text being edited, or nil when not editing.
     private(set) var draft: String?
+    private(set) var isLoadingSelection = false
     /// Changes whenever the shown transcript’s text does, so views can reset cheaply instead of
     /// comparing the whole transcript.
     private(set) var contentVersion = 0
@@ -39,11 +43,14 @@ final class TranscriptionModel {
     var errorMessage: String?
     /// Names and terms for the recordings imported next, as typed.
     var vocabularyText = ""
+    /// Applies to new imports, captured separately for every queued file.
+    var identifySpeakers = false
     /// The names and terms used for the shown transcript.
     private(set) var shownVocabulary: [String] = []
 
     @ObservationIgnored private let recognizers: RecognizerStore
     @ObservationIgnored private let languages: any LanguageIdentifying
+    @ObservationIgnored private let speakers: any SpeakerIdentifying
     @ObservationIgnored private var operation = 0
     @ObservationIgnored private var selectionLoad = 0
     @ObservationIgnored private var isProcessingQueue = false
@@ -56,13 +63,16 @@ final class TranscriptionModel {
 
     init(recognizers: RecognizerStore = .shared,
          languages: any LanguageIdentifying = EarLanguageIdentifier.shared,
+         speakers: any SpeakerIdentifying = WhoSpeakerIdentifier.shared,
          history: TranscriptHistory = .shared) {
         self.recognizers = recognizers
         self.languages = languages
+        self.speakers = speakers
         self.history = history
     }
 
     var isBusy: Bool { status != nil }
+    var speakerCount: Int { Set(cues.compactMap(\.speaker)).count }
 
     /// Completed fraction of the current download or transcription, or nil when it can’t be measured.
     var progress: Double? {
@@ -104,7 +114,7 @@ final class TranscriptionModel {
     /// Files added while a transcription runs join the queue.
     func transcribe(_ urls: [URL]) async {
         if !isProcessingQueue && languageWarning == nil { errorMessage = nil }
-        queue += urls.map { QueuedFile(url: $0, check: .identify, vocabulary: vocabulary) }
+        queue += urls.map { QueuedFile(url: $0, check: .identify, vocabulary: vocabulary, identifySpeakers: identifySpeakers) }
         await processQueue()
     }
 
@@ -117,7 +127,7 @@ final class TranscriptionModel {
             appendError("\(names) \(rejected.count == 1 ? "isn’t an audio file" : "aren’t audio files") and wasn’t transcribed.")
         }
         guard !audio.isEmpty else { return false }
-        queue += audio.map { QueuedFile(url: $0, check: .identify, vocabulary: vocabulary) }
+        queue += audio.map { QueuedFile(url: $0, check: .identify, vocabulary: vocabulary, identifySpeakers: identifySpeakers) }
         await processQueue()
         return true
     }
@@ -127,7 +137,8 @@ final class TranscriptionModel {
     /// warning, before running its action.
     func transcribeAnyway(_ warning: LanguageWarning) async {
         if languageWarning == warning { languageWarning = nil }
-        queue.insert(QueuedFile(url: warning.url, check: .accepted(warning.language), vocabulary: warning.vocabulary), at: 0)
+        queue.insert(QueuedFile(url: warning.url, check: .accepted(warning.language), vocabulary: warning.vocabulary,
+                                identifySpeakers: warning.identifySpeakers), at: 0)
         await processQueue()
     }
 
@@ -158,6 +169,7 @@ final class TranscriptionModel {
         let check: LanguageCheck
         /// Captured when queued, so editing the list affects only later imports.
         let vocabulary: [String]
+        let identifySpeakers: Bool
     }
 
     /// Transcribes queued files in order. Waits for model preparation, and pauses while a
@@ -169,7 +181,7 @@ final class TranscriptionModel {
         if let preparing { await preparing.value }
         while languageWarning == nil, !queue.isEmpty {
             let file = queue.removeFirst()
-            await transcribe(file.url, language: file.check, vocabulary: file.vocabulary)
+            await transcribe(file.url, language: file.check, vocabulary: file.vocabulary, identifySpeakers: file.identifySpeakers)
         }
     }
 
@@ -180,7 +192,7 @@ final class TranscriptionModel {
     /// The names and terms currently entered for the next imports.
     var vocabulary: [String] { Vocabulary.terms(from: vocabularyText) }
 
-    private func transcribe(_ url: URL, language check: LanguageCheck, vocabulary: [String]) async {
+    private func transcribe(_ url: URL, language check: LanguageCheck, vocabulary: [String], identifySpeakers: Bool) async {
         status = "Opening audio…"
         operation += 1
         let current = operation
@@ -203,7 +215,8 @@ final class TranscriptionModel {
                 language = await identifyLanguage(url)
                 // Ask before loading the model, so unsupported speech never costs a model load.
                 if let language, language.isUnsupported {
-                    languageWarning = LanguageWarning(url: url, language: language, vocabulary: vocabulary)
+                    languageWarning = LanguageWarning(url: url, language: language, vocabulary: vocabulary,
+                                                      identifySpeakers: identifySpeakers)
                     return
                 }
             case .accepted(let accepted):
@@ -217,51 +230,57 @@ final class TranscriptionModel {
                     self?.reportProgress(progress.fractionCompleted, for: current)
                 }
             }
-            // Save any edits to the entry they belong to before the new result replaces it.
-            endEditing()
-            transcript = result.text
-            contentVersion += 1
-            cues = Subtitles.cues(from: result.words)
-            detectedLanguage = language
-            fileName = url.lastPathComponent
-            audioDuration = result.duration
-            processingTime = result.processingTime
-            editedDate = nil
-            shownVocabulary = vocabulary
-            saveToHistory()
+            transcriptionProgress = nil
+            let cues = await subtitleCues(from: result.words, url: url, identifySpeakers: identifySpeakers)
+            let entry = HistoryEntry(id: UUID(), fileName: url.lastPathComponent, date: .now,
+                                     audioDuration: result.duration, processingTime: result.processingTime,
+                                     language: language, vocabulary: vocabulary.isEmpty ? nil : vocabulary)
+            finishTranscription(entry, record: TranscriptRecord(transcript: result.text, cues: cues))
             prepareLanguageCheck()
         } catch {
             appendError("“\(url.lastPathComponent)” couldn’t be transcribed. \(error.localizedDescription)")
         }
     }
 
-    /// Saves the transcript just shown. On failure the transcript stays on screen, unsaved.
-    /// Recordings with no recognized speech aren’t saved.
-    private func saveToHistory() {
-        selectionLoad += 1
-        guard !transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            selection = nil
-            return
-        }
-        let entry = HistoryEntry(id: UUID(), fileName: fileName, date: .now,
-                                 audioDuration: audioDuration ?? 0, processingTime: processingTime ?? 0,
-                                 language: detectedLanguage,
-                                 vocabulary: shownVocabulary.isEmpty ? nil : shownVocabulary)
+    /// Speaker labeling is optional: a failed download or prediction never loses the transcript.
+    func subtitleCues(from words: [Word], url: URL, identifySpeakers: Bool) async -> [SubtitleCue] {
+        guard identifySpeakers, !words.isEmpty else { return Subtitles.cues(from: words) }
+        let previousStatus = status
+        status = "Identifying speakers with Who…"
+        defer { status = previousStatus }
         do {
-            try history.save(entry, TranscriptRecord(transcript: transcript, cues: cues))
-            selection = entry.id
+            let turns = try await speakers.identify(url)
+            return Subtitles.cues(from: words, speakers: SpeakerAttribution.speakers(for: words, turns: turns))
         } catch {
-            selection = nil
-            Self.historyLogger.error("Couldn’t save transcript: \(error.localizedDescription, privacy: .public)")
-            appendError("The transcript of “\(fileName)” couldn’t be saved to history. \(error.localizedDescription)")
+            Self.speakerLogger.error("Speaker identification failed: \(error.localizedDescription, privacy: .public)")
+            appendError("“\(url.lastPathComponent)” was transcribed, but its speakers couldn’t be identified. \(error.localizedDescription)")
+            return Subtitles.cues(from: words)
         }
+    }
+
+    /// Keeps a completed recording in history even when an unsaved draft must stay on screen.
+    func finishTranscription(_ entry: HistoryEntry, record: TranscriptRecord) {
+        let mayReplace = endEditing()
+        var saved = false
+        if !record.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            do {
+                try history.save(entry, record)
+                saved = true
+            } catch {
+                Self.historyLogger.error("Couldn’t save transcript: \(error.localizedDescription, privacy: .public)")
+                appendError("The transcript of “\(entry.fileName)” couldn’t be saved to history. \(error.localizedDescription)")
+            }
+        }
+        guard mayReplace else { return }
+        selectionLoad += 1
+        show(entry, record)
+        if !saved { selection = nil }
     }
 
     /// Shows a saved transcript, or the empty view for nil. Ignored while busy, because the
     /// running transcription will replace whatever is shown when it finishes.
     func select(_ id: UUID?) async {
-        endEditing()
-        guard !isBusy else { return }
+        guard endEditing(), !isBusy else { return }
         selectionLoad += 1
         let current = selectionLoad
         guard let id, let entry = history.entries.first(where: { $0.id == id }) else {
@@ -269,6 +288,8 @@ final class TranscriptionModel {
             return
         }
         selection = id
+        isLoadingSelection = true
+        defer { if current == selectionLoad { isLoadingSelection = false } }
         do {
             let record = try await history.record(for: id)
             // A later selection wins over a slower earlier load.
@@ -320,7 +341,9 @@ final class TranscriptionModel {
         if entry.edited != editedDate, !isEditing {
             selectionLoad += 1
             let current = selectionLoad
+            isLoadingSelection = true
             Task {
+                defer { if current == selectionLoad { isLoadingSelection = false } }
                 do {
                     let record = try await history.record(for: selection)
                     guard current == selectionLoad else { return }
@@ -336,10 +359,10 @@ final class TranscriptionModel {
 
     var isEditing: Bool { draft != nil }
     /// Only saved transcripts can be edited, because edits are saved to history.
-    var canEdit: Bool { selection != nil }
+    var canEdit: Bool { selection != nil && !isLoadingSelection }
 
     func beginEditing() {
-        guard let selection, draft == nil else { return }
+        guard canEdit, let selection, draft == nil else { return }
         editingID = selection
         draft = transcript
     }
@@ -359,51 +382,64 @@ final class TranscriptionModel {
     }
 
     /// Saves the draft, keeping editing open. Subtitle cues keep their timings.
-    func saveDraft() {
+    @discardableResult
+    func saveDraft() -> Bool {
         autosave?.cancel()
-        guard let draft, let id = editingID, draft != transcript else { return }
-        let edited = CueAlignment.realign(cues, to: draft)
+        guard let draft, let id = editingID, draft != transcript else { return true }
         let now = Date.now
         do {
+            let original = try history.originalRecord(for: id)
+            let edited = CueAlignment.realign(original.cues, to: draft)
             try history.update(id, TranscriptRecord(transcript: draft, cues: edited), editedAt: now)
             transcript = draft
+            displayTranscript = Subtitles.plainText(draft, cues: edited)
             contentVersion += 1
             cues = edited
             editedDate = now
+            return true
         } catch {
             Self.historyLogger.error("Couldn’t save edits: \(error.localizedDescription, privacy: .public)")
             appendError("Your edits to “\(fileName)” couldn’t be saved. \(error.localizedDescription)")
+            return false
         }
     }
 
     /// Saves the draft and leaves editing.
-    func endEditing() {
-        guard isEditing else { return }
-        saveDraft()
+    @discardableResult
+    func endEditing() -> Bool {
+        guard saveDraft() else { return false }
         draft = nil
         editingID = nil
+        return true
     }
 
     /// Restores the shown transcript as it was transcribed.
     func revertToOriginal() async {
-        endEditing()
+        guard !isLoadingSelection, endEditing() else { return }
         guard let id = selection else { return }
+        selectionLoad += 1
+        let current = selectionLoad
+        isLoadingSelection = true
+        defer { if current == selectionLoad { isLoadingSelection = false } }
         do {
             let record = try await history.revert(id)
-            guard selection == id, let entry = history.entries.first(where: { $0.id == id }) else { return }
-            selectionLoad += 1
+            guard current == selectionLoad, selection == id,
+                  let entry = history.entries.first(where: { $0.id == id }) else { return }
             show(entry, record)
         } catch {
             Self.historyLogger.error("Couldn’t revert transcript: \(error.localizedDescription, privacy: .public)")
+            guard current == selectionLoad else { return }
             appendError("The original transcript couldn’t be restored. \(error.localizedDescription)")
         }
     }
 
     private func show(_ entry: HistoryEntry?, _ record: TranscriptRecord?) {
+        isLoadingSelection = false
         contentVersion += 1
         selection = entry?.id
         transcript = record?.transcript ?? ""
         cues = record?.cues ?? []
+        displayTranscript = Subtitles.plainText(transcript, cues: cues)
         detectedLanguage = entry?.language
         fileName = entry?.fileName ?? ""
         audioDuration = entry?.audioDuration

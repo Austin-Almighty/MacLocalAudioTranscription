@@ -83,6 +83,13 @@ final class TranscriptHistory {
         }.value
     }
 
+    /// Keeps the original cue timings available even after edits remove every word of a cue.
+    func originalRecord(for id: UUID) throws -> TranscriptRecord {
+        let original = originalURL(id)
+        let url = FileManager.default.fileExists(atPath: original.path) ? original : recordURL(id)
+        return try JSONDecoder().decode(TranscriptRecord.self, from: Data(contentsOf: url))
+    }
+
     /// Saves an edited transcript. The first edit keeps a copy of the transcript as transcribed,
     /// so it can be restored.
     func update(_ id: UUID, _ record: TranscriptRecord, editedAt date: Date) throws {
