@@ -95,8 +95,7 @@ final class TranscriptHistoryTests {
     }
 
     @Test func clearingHistoryRemovesFilesThatCouldNotBeListed() async throws {
-        let good = entry("good.wav", at: 1_000)
-        try history.save(good, unicodeRecord)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         var future = entry("future.wav", at: 2_000)
         future.version = HistoryEntry.currentVersion + 1
         try JSONEncoder().encode(future).write(to: directory.appending(path: "\(future.id.uuidString).json"))
@@ -105,6 +104,8 @@ final class TranscriptHistoryTests {
 
         let reopened = TranscriptHistory(directory: directory)
         await reopened.load()
+        #expect(reopened.entries.isEmpty)
+        #expect(try jsonFiles().count == 3)
         try reopened.deleteAll()
         #expect(reopened.entries.isEmpty)
         #expect(try jsonFiles().isEmpty)
@@ -120,9 +121,11 @@ final class TranscriptHistoryTests {
         #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(blocked.id.uuidString).transcript.json").path))
     }
 
-    @Test func startsEmptyBeforeAnythingIsSaved() async {
+    @Test func startsEmptyBeforeAnythingIsSaved() async throws {
         await history.load()
         #expect(history.entries.isEmpty)
+        try history.deleteAll()
+        try history.deleteAll()
         #expect(!FileManager.default.fileExists(atPath: directory.path))
     }
 }

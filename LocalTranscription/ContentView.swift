@@ -48,9 +48,9 @@ struct ContentView: View {
                         .disabled(!model.canEdit)
                         #if os(macOS)
                         Button("Copy Transcript", systemImage: "doc.on.doc") {
-                            model.saveDraft()
+                            guard model.saveDraft() else { return }
                             NSPasteboard.general.clearContents()
-                            NSPasteboard.general.setString(model.transcript, forType: .string)
+                            NSPasteboard.general.setString(model.displayTranscript, forType: .string)
                         }
                         .help("Copy the transcript")
                         .disabled(model.transcript.isEmpty)
@@ -96,6 +96,7 @@ struct ContentView: View {
         // Save edits when the app moves to the background or quits, not only when the window closes.
         .onChange(of: scenePhase) { if scenePhase != .active { model.saveDraft() } }
         #if os(macOS)
+        .background(TranscriptWindowCloseGuard(model: model).allowsHitTesting(false))
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
             model.endEditing()
         }
@@ -164,7 +165,7 @@ struct ContentView: View {
 
     private func export(_ format: TranscriptFormat) {
         // Render once here; rendering in body would re-format long subtitles on every progress update.
-        model.saveDraft()
+        guard model.saveDraft() else { return }
         exportFormat = format
         exportDocument = TranscriptDocument(text: format.render(transcript: model.transcript, cues: model.cues))
         isExporting = true
@@ -193,7 +194,7 @@ struct ContentView: View {
                         if showTimestamps && !model.cues.isEmpty {
                             timedTranscript
                         } else {
-                            Text(model.transcript.isEmpty ? "No speech was recognized." : model.transcript)
+                            Text(model.transcript.isEmpty ? "No speech was recognized." : model.displayTranscript)
                                 .font(transcriptFont)
                                 .lineSpacing(6)
                                 .textSelection(.enabled)
@@ -256,7 +257,7 @@ struct ContentView: View {
             var time = AttributedString(Duration.seconds(cue.start).formatted(.time(pattern: pattern)) + "  ")
             time.font = .callout.monospacedDigit()
             time.foregroundColor = .secondary
-            return time + AttributedString(cue.text.replacingOccurrences(of: "\n", with: " "))
+            return time + AttributedString(cue.labelledText.replacingOccurrences(of: "\n", with: " "))
         }
         let text = lines.dropFirst().reduce(lines.first ?? AttributedString()) { $0 + AttributedString("\n") + $1 }
         return Text(text)
@@ -327,12 +328,16 @@ struct ContentView: View {
                 if !model.fileName.isEmpty {
                     LabeledContent("Language", value: languageDescription)
                 }
+                if model.speakerCount > 0 {
+                    LabeledContent("Speakers", value: "\(model.speakerCount)")
+                }
                 if !model.shownVocabulary.isEmpty {
                     LabeledContent("Names and Terms", value: model.shownVocabulary.formatted(.list(type: .and)))
                 }
                 if let edited = model.editedDate {
                     LabeledContent("Edited", value: edited.formatted(date: .abbreviated, time: .shortened))
                     Button("Revert to Original…") { isConfirmingRevert = true }
+                        .disabled(model.isLoadingSelection)
                 }
                 if let time = model.processingTime {
                     LabeledContent("Processing", value: DisplayFormat.processingTime(time))
@@ -368,6 +373,14 @@ struct ContentView: View {
                 }
             }
 
+            Section("Speaker Identification") {
+                Toggle("Identify Speakers (Who)", isOn: $model.identifySpeakers)
+                    .help("Label speakers in recordings imported next")
+                Text("Best for conversations with up to four speakers. Applies to new imports. The first use downloads an additional model; later imports can run offline. Speaker numbers are specific to each recording, not people’s names.")
+                    .font(.caption)
+                    .foregroundStyle(.secondary)
+            }
+
             Section("Languages") {
                 DisclosureGroup("\(DisplayFormat.supportedLanguageNames().count) Supported Languages") {
                     Text(DisplayFormat.supportedLanguageNames().formatted(.list(type: .and)))
@@ -397,6 +410,79 @@ struct ContentView: View {
         }
     }
 }
+
+#if os(macOS)
+/// Intercepts closing before SwiftUI tears down the view that owns an unsaved draft.
+struct TranscriptWindowCloseGuard: NSViewRepresentable {
+    let model: TranscriptionModel
+
+    func makeNSView(context: Context) -> GuardView { GuardView(model: model) }
+    func updateNSView(_ view: GuardView, context: Context) { view.installDelegate() }
+    static func dismantleNSView(_ view: GuardView, coordinator: ()) { view.restoreDelegate() }
+
+    final class GuardView: NSView {
+        let model: TranscriptionModel
+        private var closeDelegate: TranscriptWindowDelegate?
+        private weak var guardedWindow: NSWindow?
+
+        init(model: TranscriptionModel) {
+            self.model = model
+            super.init(frame: .zero)
+        }
+
+        required init?(coder: NSCoder) { return nil }
+
+        override func viewDidMoveToWindow() {
+            super.viewDidMoveToWindow()
+            installDelegate()
+        }
+
+        func installDelegate() {
+            guard guardedWindow !== window || window?.delegate !== closeDelegate else { return }
+            restoreDelegate()
+            guard let window else { return }
+            let delegate = TranscriptWindowDelegate(model: model, originalDelegate: window.delegate)
+            closeDelegate = delegate
+            guardedWindow = window
+            window.delegate = delegate
+        }
+
+        func restoreDelegate() {
+            if let guardedWindow, guardedWindow.delegate === closeDelegate {
+                guardedWindow.delegate = closeDelegate?.originalDelegate
+            }
+            guardedWindow = nil
+            closeDelegate = nil
+        }
+    }
+}
+
+/// Forwards the existing SwiftUI window delegate’s behavior while guarding draft saves.
+final class TranscriptWindowDelegate: NSObject, NSWindowDelegate {
+    let model: TranscriptionModel
+    weak var originalDelegate: (any NSWindowDelegate)?
+
+    init(model: TranscriptionModel, originalDelegate: (any NSWindowDelegate)?) {
+        self.model = model
+        self.originalDelegate = originalDelegate
+    }
+
+    @MainActor
+    func windowShouldClose(_ sender: NSWindow) -> Bool {
+        guard model.endEditing() else { return false }
+        return originalDelegate?.windowShouldClose?(sender) ?? true
+    }
+
+    override func responds(to selector: Selector!) -> Bool {
+        super.responds(to: selector) || originalDelegate?.responds(to: selector) == true
+    }
+
+    override func forwardingTarget(for selector: Selector!) -> Any? {
+        if originalDelegate?.responds(to: selector) == true { return originalDelegate }
+        return super.forwardingTarget(for: selector)
+    }
+}
+#endif
 
 struct TranscriptDocument: FileDocument {
     static var readableContentTypes: [UTType] { [.plainText] }

@@ -6,6 +6,14 @@ struct SubtitleCue: Codable, Equatable, Sendable {
     let start: TimeInterval
     let end: TimeInterval
     let text: String
+    /// Who’s zero-based speaker number, absent in older or unlabelled transcripts.
+    var speaker: Int? = nil
+
+    var speakerLabel: String? { speaker.map { "Speaker \($0 + 1)" } }
+    var labelledText: String {
+        guard let speakerLabel else { return text }
+        return Subtitles.layout("\(speakerLabel): " + text.replacingOccurrences(of: "\n", with: " "))
+    }
 }
 
 /// Groups Voz’s word timings into readable subtitle cues and writes them as SRT or WebVTT.
@@ -15,47 +23,69 @@ enum Subtitles {
     static let minCueDuration: TimeInterval = 0.5
     static let maxPause: TimeInterval = 1
 
-    static func cues(from words: [Word]) -> [SubtitleCue] {
-        var groups: [[Word]] = []
+    static func cues(from words: [Word], speakers: [Int?] = []) -> [SubtitleCue] {
+        var groups: [(words: [Word], speaker: Int?)] = []
         var current: [Word] = []
-        for word in words {
+        var currentSpeaker: Int?
+        for (index, word) in words.enumerated() {
+            let speaker = index < speakers.count ? speakers[index] : nil
             if let first = current.first, let last = current.last {
                 let text = (current + [word]).map(\.text).joined(separator: " ")
+                let labelled = speaker.map { "Speaker \($0 + 1): " } ?? ""
                 if word.start - last.end > maxPause || word.end - first.start > maxCueDuration
-                    || wrapped(text) == nil {
-                    groups.append(current)
+                    || currentSpeaker != speaker || wrapped(labelled + text) == nil {
+                    groups.append((current, currentSpeaker))
                     current = []
                 }
             }
+            currentSpeaker = speaker
             current.append(word)
             if endsSentence(word.text) {
-                groups.append(current)
+                groups.append((current, currentSpeaker))
                 current = []
             }
         }
-        if !current.isEmpty { groups.append(current) }
+        if !current.isEmpty { groups.append((current, currentSpeaker)) }
 
         return groups.indices.map { index in
-            let group = groups[index]
+            let group = groups[index].words
             let start = group[0].start
             var end = max(group[group.count - 1].end, start + minCueDuration)
             // Keep cues from overlapping the next one after the minimum duration is applied.
-            if index + 1 < groups.count { end = max(start, min(end, groups[index + 1][0].start)) }
+            if index + 1 < groups.count { end = max(start, min(end, groups[index + 1].words[0].start)) }
             let text = group.map(\.text).joined(separator: " ")
-            return SubtitleCue(start: start, end: end, text: wrapped(text) ?? text)
+            return SubtitleCue(start: start, end: end, text: wrapped(text) ?? text, speaker: groups[index].speaker)
         }
     }
 
     static func subRip(_ cues: [SubtitleCue]) -> String {
         cues.enumerated().map { index, cue in
-            "\(index + 1)\n\(timestamp(cue.start, separator: ",")) --> \(timestamp(cue.end, separator: ","))\n\(cue.text)\n"
+            "\(index + 1)\n\(timestamp(cue.start, separator: ",")) --> \(timestamp(cue.end, separator: ","))\n\(cue.labelledText)\n"
         }.joined(separator: "\n")
     }
 
     static func webVTT(_ cues: [SubtitleCue]) -> String {
         "WEBVTT\n" + cues.map { cue in
-            "\n\(timestamp(cue.start, separator: ".")) --> \(timestamp(cue.end, separator: "."))\n\(cue.text)\n"
+            "\n\(timestamp(cue.start, separator: ".")) --> \(timestamp(cue.end, separator: "."))\n\(cue.labelledText)\n"
         }.joined()
+    }
+
+    /// Speaker headings are presentation only; the editable transcript keeps just the spoken words.
+    static func plainText(_ transcript: String, cues: [SubtitleCue]) -> String {
+        guard cues.contains(where: { $0.speaker != nil }) else { return transcript }
+        var groups: [(speaker: Int?, text: [String])] = []
+        for cue in cues {
+            let text = cue.text.replacingOccurrences(of: "\n", with: " ")
+            if !groups.isEmpty, groups[groups.count - 1].speaker == cue.speaker {
+                groups[groups.count - 1].text.append(text)
+            } else {
+                groups.append((cue.speaker, [text]))
+            }
+        }
+        return groups.map { group in
+            let label = group.speaker.map { "Speaker \($0 + 1): " } ?? ""
+            return label + group.text.joined(separator: " ")
+        }.joined(separator: "\n\n")
     }
 
     /// Formats seconds as `HH:MM:SS` followed by the separator and milliseconds.
@@ -114,7 +144,7 @@ enum TranscriptFormat: CaseIterable, Sendable {
 
     func render(transcript: String, cues: [SubtitleCue]) -> String {
         switch self {
-        case .text: transcript
+        case .text: Subtitles.plainText(transcript, cues: cues)
         case .subRip: Subtitles.subRip(cues)
         case .webVTT: Subtitles.webVTT(cues)
         }

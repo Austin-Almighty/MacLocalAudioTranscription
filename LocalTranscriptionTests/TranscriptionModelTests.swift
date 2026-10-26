@@ -1,5 +1,10 @@
 import Foundation
+import Observation
 import Testing
+#if os(macOS)
+import AppKit
+import SwiftUI
+#endif
 @testable import LocalTranscription
 
 @MainActor
@@ -150,3 +155,241 @@ struct VocabularyQueueTests {
         #expect(model.vocabulary == ["Something else"])
     }
 }
+
+@MainActor
+final class TranscriptionEditingSafetyTests {
+    let history = TranscriptHistory.temporary()
+    let directory: URL
+    private var selectionDuringRevert: Task<Void, Never>?
+
+    init() { directory = history.directory }
+    deinit { try? FileManager.default.removeItem(at: directory) }
+
+    private func entry(_ name: String) -> HistoryEntry {
+        HistoryEntry(id: UUID(), fileName: name, date: .now, audioDuration: 1,
+                     processingTime: 0.1, language: nil)
+    }
+
+    private func model() -> TranscriptionModel {
+        TranscriptionModel(recognizers: RecognizerStore(), languages: FakeLanguageIdentifier(), history: history)
+    }
+
+    @Test func cannotEditOrRevertWhileAnotherTranscriptIsLoading() async throws {
+        let first = entry("first.wav"), second = entry("second.wav")
+        try history.save(first, TranscriptRecord(transcript: "First transcript.", cues: []))
+        try history.save(second, TranscriptRecord(transcript: "Original second transcript.", cues: []))
+        // A long transcript keeps the background JSON decode pending across the main-actor boundary.
+        let longTranscript = String(repeating: "Saved second transcript. ", count: 100_000)
+        try history.update(second.id, TranscriptRecord(transcript: longTranscript, cues: []), editedAt: .now)
+        let model = model()
+        await model.select(first.id)
+        let selecting = Task { await model.select(second.id) }
+        for _ in 0..<100 where !model.isLoadingSelection { await Task.yield() }
+        try #require(model.isLoadingSelection)
+        #expect(model.transcript == "First transcript.")
+        #expect(!model.canEdit)
+        model.beginEditing()
+        #expect(!model.isEditing)
+        await model.revertToOriginal()
+        await selecting.value
+
+        #expect(model.canEdit)
+        #expect(model.transcript == longTranscript)
+        #expect(try await history.record(for: second.id).transcript == longTranscript)
+    }
+
+    @Test func failedWritesKeepTheDraftAndBlockDoneSelectionAndRevert() async throws {
+        let first = entry("first.wav"), second = entry("second.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        try history.save(second, TranscriptRecord(transcript: "Second transcript.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Unsaved words.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: history.directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: history.directory.path) }
+
+        #expect(!model.saveDraft())
+        #expect(!model.endEditing())
+        await model.select(second.id)
+        await model.revertToOriginal()
+        #expect(model.isEditing)
+        #expect(model.draft == "Unsaved words.")
+        #expect(model.selection == first.id)
+        #expect(model.transcript == "Original words.")
+        #expect(try await history.record(for: first.id).transcript == "Original words.")
+        #expect(model.errorMessage != nil)
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: history.directory.path)
+        #expect(model.endEditing())
+        #expect(!model.isEditing)
+        #expect(try await history.record(for: first.id).transcript == "Unsaved words.")
+    }
+
+    @Test func editingDuringRevertCannotRestoreTheOldDraft() async throws {
+        let saved = entry("saved.wav")
+        let original = TranscriptRecord(transcript: "Original words.", cues: [])
+        try history.save(saved, original)
+        try history.update(saved.id, TranscriptRecord(transcript: "Old edited words.", cues: []), editedAt: .now)
+        let model = model()
+        await model.select(saved.id)
+        // Observation runs synchronously during the restore, before its record read completes.
+        withObservationTracking {
+            _ = history.entries
+        } onChange: {
+            MainActor.assumeIsolated {
+                #expect(model.isLoadingSelection)
+                #expect(!model.canEdit)
+                model.beginEditing()
+            }
+        }
+
+        await model.revertToOriginal()
+        #expect(!model.isEditing)
+        #expect(!model.isLoadingSelection)
+        #expect(model.canEdit)
+        #expect(model.endEditing())
+        #expect(model.transcript == original.transcript)
+        #expect(try await history.record(for: saved.id) == original)
+    }
+
+    @Test func failedRevertReleasesTheLoadingGuard() async throws {
+        let saved = entry("saved.wav")
+        try history.save(saved, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(saved.id)
+
+        await model.revertToOriginal()
+
+        #expect(!model.isLoadingSelection)
+        #expect(model.canEdit)
+        #expect(model.errorMessage != nil)
+        model.beginEditing()
+        #expect(model.isEditing)
+        #expect(model.endEditing())
+    }
+
+    @Test func selectingAnotherEntryDuringRevertKeepsTheNewSelection() async throws {
+        let saved = entry("saved.wav"), other = entry("other.wav")
+        try history.save(saved, TranscriptRecord(transcript: "Original words.", cues: []))
+        try history.update(saved.id, TranscriptRecord(transcript: "Old edited words.", cues: []), editedAt: .now)
+        try history.save(other, TranscriptRecord(transcript: "Other transcript.", cues: []))
+        let model = model()
+        await model.select(saved.id)
+        withObservationTracking {
+            _ = history.entries
+        } onChange: {
+            MainActor.assumeIsolated {
+                self.selectionDuringRevert = Task { await model.select(other.id) }
+            }
+        }
+
+        await model.revertToOriginal()
+        await (try #require(selectionDuringRevert)).value
+
+        #expect(model.selection == other.id)
+        #expect(model.transcript == "Other transcript.")
+        #expect(!model.isLoadingSelection)
+        #expect(model.canEdit)
+        #expect(try await history.record(for: saved.id).transcript == "Original words.")
+    }
+
+    @Test func finishedRecordingIsSavedWithoutReplacingAnUnsavableDraft() async throws {
+        let first = entry("first.wav"), finished = entry("finished.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Unsaved words.")
+        // Only this entry fails to save; other recordings can still be stored.
+        let backup = history.directory.appending(path: "\(first.id.uuidString).original.transcript.json")
+        try Data("invalid JSON".utf8).write(to: backup)
+        let completed = TranscriptRecord(transcript: "New recording.", cues: [])
+        model.finishTranscription(finished, record: completed)
+
+        #expect(model.selection == first.id)
+        #expect(model.draft == "Unsaved words.")
+        #expect(model.transcript == "Original words.")
+        #expect(try await history.record(for: finished.id) == completed)
+        #expect(history.entries.contains { $0.id == finished.id })
+        try FileManager.default.removeItem(at: backup)
+        #expect(model.endEditing())
+    }
+
+    #if os(macOS)
+    @Test func nativeCloseAndQuitKeepADraftUntilItCanBeSaved() async throws {
+        let saved = entry("saved.wav")
+        try history.save(saved, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(saved.id)
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil)
+        window.delegate = delegate
+        defer { window.delegate = nil; window.close() }
+        try #require(NSApplication.shared.windows.contains { $0 === window })
+        let applicationDelegate = TranscriptApplicationDelegate()
+
+        model.beginEditing()
+        model.updateDraft("Words that must survive closing.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        #expect(!delegate.windowShouldClose(window))
+        #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateCancel)
+        #expect(model.isEditing)
+        #expect(model.draft == "Words that must survive closing.")
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        #expect(delegate.windowShouldClose(window))
+        #expect(!model.isEditing)
+        #expect(try await history.record(for: saved.id).transcript == "Words that must survive closing.")
+
+        model.beginEditing()
+        model.updateDraft("Words saved while quitting.")
+        #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateNow)
+        #expect(!model.isEditing)
+        #expect(try await history.record(for: saved.id).transcript == "Words saved while quitting.")
+    }
+
+    @Test func nativeClosePreservesTheOriginalWindowDelegate() {
+        let original = CloseVetoDelegate()
+        let delegate = TranscriptWindowDelegate(model: model(), originalDelegate: original)
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        #expect(!delegate.windowShouldClose(window))
+        let selector = #selector(NSWindowDelegate.windowDidResize(_:))
+        #expect(delegate.responds(to: selector))
+        #expect(delegate.forwardingTarget(for: selector) as? CloseVetoDelegate === original)
+    }
+
+    @Test func nativeBridgeInstallsAndRestoresTheOriginalWindowDelegate() {
+        let original = CloseVetoDelegate()
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 200, height: 100),
+                              styleMask: [.titled, .closable], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        window.delegate = original
+        defer { window.contentView = nil; window.delegate = nil; window.close() }
+        let model = model()
+        let host = NSHostingView(rootView: TranscriptWindowCloseGuard(model: model))
+        host.frame = NSRect(x: 0, y: 0, width: 200, height: 100)
+        window.contentView = host
+        host.layoutSubtreeIfNeeded()
+
+        let installed = window.delegate as? TranscriptWindowDelegate
+        #expect(installed?.model === model)
+        #expect(installed?.originalDelegate === original)
+        window.contentView = nil
+        #expect(window.delegate === original)
+    }
+    #endif
+}
+
+#if os(macOS)
+private final class CloseVetoDelegate: NSObject, NSWindowDelegate {
+    @MainActor func windowShouldClose(_ sender: NSWindow) -> Bool { false }
+    @MainActor func windowDidResize(_ notification: Notification) {}
+}
+#endif

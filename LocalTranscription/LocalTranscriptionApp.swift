@@ -3,6 +3,7 @@ import SwiftUI
 @main
 struct LocalTranscriptionApp: App {
     #if os(macOS)
+    @NSApplicationDelegateAdaptor(TranscriptApplicationDelegate.self) private var applicationDelegate
     @AppStorage("transcriptTextScale") private var transcriptTextScale = 1.0
     @State private var updater = AppUpdater()
     #endif
@@ -40,3 +41,17 @@ struct LocalTranscriptionApp: App {
         #endif
     }
 }
+
+#if os(macOS)
+final class TranscriptApplicationDelegate: NSObject, NSApplicationDelegate {
+    @MainActor
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        for window in sender.windows {
+            if let delegate = window.delegate as? TranscriptWindowDelegate, !delegate.model.endEditing() {
+                return .terminateCancel
+            }
+        }
+        return .terminateNow
+    }
+}
+#endif
