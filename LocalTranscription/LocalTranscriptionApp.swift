@@ -53,6 +53,14 @@ final class TranscriptApplicationDelegate: NSObject, NSApplicationDelegate {
                 return .terminateCancel
             }
         }
+        // A recording History couldn’t store would be lost: ask first in its window.
+        for window in sender.windows {
+            if let delegate = window.delegate as? TranscriptWindowDelegate, delegate.model.unsavedResultName != nil {
+                delegate.model.isConfirmingQuit = true
+                window.makeKeyAndOrderFront(nil)
+                return .terminateCancel
+            }
+        }
         return .terminateNow
     }
 }

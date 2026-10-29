@@ -37,6 +37,12 @@ final class TranscriptionModel {
     private(set) var draft: String?
     /// Why the draft couldn’t be saved, while the person chooses to discard it or keep editing.
     private(set) var editSaveError: String?
+    /// Another window saved this entry since editing began; saving waits for the person to choose.
+    private(set) var editConflict = false
+    /// The file name of a shown recording that History couldn’t store, so quitting asks first.
+    private(set) var unsavedResultName: String?
+    /// Set when quitting was refused to ask about an unsaved recording.
+    var isConfirmingQuit = false
     private(set) var isLoadingSelection = false
     /// Changes whenever the shown transcript’s text does, so views can reset cheaply instead of
     /// comparing the whole transcript.
@@ -62,8 +68,10 @@ final class TranscriptionModel {
     @ObservationIgnored private var autosave: Task<Void, Never>?
     // Autosave stays quiet after a failure was reported, so a persistent failure doesn’t nag while typing.
     @ObservationIgnored private var reportedSaveFailure = false
-    /// A finished recording that couldn’t be saved, shown once editing ends so it isn’t lost.
-    @ObservationIgnored private var waitingResult: (entry: HistoryEntry, record: TranscriptRecord, error: String)?
+    /// Finished recordings that couldn’t be saved, retried and shown once editing ends so they aren’t lost.
+    @ObservationIgnored private var waitingResults: [(entry: HistoryEntry, record: TranscriptRecord)] = []
+    /// The entry’s edited date when this window last loaded or saved it, to notice another window’s save.
+    @ObservationIgnored private var editingBase: Date?
     private var queue: [QueuedFile] = []
     @ObservationIgnored let history: TranscriptHistory
 
@@ -268,20 +276,25 @@ final class TranscriptionModel {
     /// A recording that can’t be saved either waits on screen until editing ends.
     func finishTranscription(_ entry: HistoryEntry, record: TranscriptRecord) {
         let mayReplace = endEditing()
-        var saveError: String?
-        if !record.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            do {
-                try history.save(entry, record)
-            } catch {
-                Self.historyLogger.error("Couldn’t save transcript: \(error.localizedDescription, privacy: .public)")
-                saveError = "The transcript of “\(entry.fileName)” couldn’t be saved to history. \(error.localizedDescription)"
-            }
-        }
+        let saveError = saveResult(entry, record)
         guard mayReplace else {
-            if let saveError { waitingResult = (entry, record, saveError) }
+            if saveError != nil { waitingResults.append((entry, record)) }
             return
         }
         showResult(entry, record, error: saveError)
+    }
+
+    /// Saves a finished recording to History, returning why it couldn’t be saved. Recordings with
+    /// no recognized speech aren’t saved.
+    private func saveResult(_ entry: HistoryEntry, _ record: TranscriptRecord) -> String? {
+        guard !record.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        do {
+            try history.save(entry, record)
+            return nil
+        } catch {
+            Self.historyLogger.error("Couldn’t save transcript: \(error.localizedDescription, privacy: .public)")
+            return "The transcript of “\(entry.fileName)” couldn’t be saved to history. \(error.localizedDescription)"
+        }
     }
 
     /// Shows a finished recording; one that failed to save is shown unselected, so it can’t be edited.
@@ -290,19 +303,32 @@ final class TranscriptionModel {
         show(entry, record)
         guard let error else { return }
         selection = nil
+        unsavedResultName = entry.fileName
         appendError(error)
     }
 
-    private func showWaitingResult() {
-        guard let waiting = waitingResult else { return }
-        waitingResult = nil
-        showResult(waiting.entry, waiting.record, error: waiting.error)
+    /// Retries saving the recordings that waited on editing, then shows the latest. Earlier ones
+    /// that still can’t be saved are named, since only one can stay on screen.
+    private func showWaitingResults() {
+        guard let latest = waitingResults.last else { return }
+        let earlier = waitingResults.dropLast()
+        waitingResults = []
+        for waiting in earlier {
+            if let error = saveResult(waiting.entry, waiting.record) { appendError(error) }
+        }
+        showResult(latest.entry, latest.record, error: saveResult(latest.entry, latest.record))
+    }
+
+    /// Forgets a shown recording that History couldn’t store, after the person chose to quit anyway.
+    func discardUnsavedResult() {
+        unsavedResultName = nil
+        isConfirmingQuit = false
     }
 
     /// Shows a saved transcript, or the empty view for nil. Ignored while busy, because the
     /// running transcription will replace whatever is shown when it finishes.
     func select(_ id: UUID?) async {
-        let hadWaitingResult = waitingResult != nil
+        let hadWaitingResult = !waitingResults.isEmpty
         guard endEditing(), !isBusy else { return }
         // Leave an unsaved recording that just appeared on screen, rather than replacing it unseen.
         guard !hadWaitingResult else { return }
@@ -387,6 +413,7 @@ final class TranscriptionModel {
     func beginEditing() {
         guard canEdit, let selection, draft == nil else { return }
         editingID = selection
+        editingBase = editedDate
         draft = transcript
     }
 
@@ -415,9 +442,17 @@ final class TranscriptionModel {
         saveDraft(reportingFailure: true)
     }
 
-    private func saveDraft(reportingFailure: Bool) -> Bool {
+    private func saveDraft(reportingFailure: Bool, overwriting: Bool = false) -> Bool {
         autosave?.cancel()
         guard let draft, let id = editingID, draft != transcript else { return true }
+        // Another window saved or reverted this entry since editing began: don’t overwrite it unasked.
+        if !overwriting, history.entries.first(where: { $0.id == id })?.edited != editingBase {
+            if reportingFailure {
+                editConflict = true
+                reportedSaveFailure = true
+            }
+            return false
+        }
         let now = Date.now
         do {
             let original = try history.originalRecord(for: id)
@@ -428,6 +463,7 @@ final class TranscriptionModel {
             contentVersion += 1
             cues = edited
             editedDate = now
+            editingBase = now
             reportedSaveFailure = false
             return true
         } catch {
@@ -457,6 +493,19 @@ final class TranscriptionModel {
     /// Dismisses a failed-save report and keeps the draft open for another try.
     func keepEditing() {
         editSaveError = nil
+        editConflict = false
+    }
+
+    /// Resolves a conflict by saving this window’s draft over the other window’s version.
+    func keepMyVersion() {
+        editConflict = false
+        saveDraft(reportingFailure: true, overwriting: true)
+    }
+
+    /// Resolves a conflict by dropping this window’s draft and showing the other window’s version.
+    func useOtherVersion() {
+        stopEditing()
+        reconcileWithHistory()
     }
 
     private func stopEditing() {
@@ -464,8 +513,9 @@ final class TranscriptionModel {
         draft = nil
         editingID = nil
         editSaveError = nil
+        editConflict = false
         reportedSaveFailure = false
-        showWaitingResult()
+        showWaitingResults()
     }
 
     /// Restores the shown transcript as it was transcribed.
@@ -490,6 +540,7 @@ final class TranscriptionModel {
 
     private func show(_ entry: HistoryEntry?, _ record: TranscriptRecord?) {
         isLoadingSelection = false
+        unsavedResultName = nil
         contentVersion += 1
         selection = entry?.id
         transcript = record?.transcript ?? ""

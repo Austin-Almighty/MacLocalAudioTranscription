@@ -140,6 +140,28 @@ struct ContentView: View {
         } message: {
             Text((model.editSaveError ?? "") + "\n\nDiscarding keeps the transcript as it was last saved.")
         }
+        .alert("Changed in Another Window", isPresented: Binding(
+            get: { model.editConflict },
+            set: { if !$0 { model.keepEditing() } }
+        )) {
+            Button("Keep My Version") { model.keepMyVersion() }
+            Button("Use Other Version", role: .destructive) { model.useOtherVersion() }
+            Button("Keep Editing", role: .cancel) { model.keepEditing() }
+        } message: {
+            Text("“\(model.fileName)” was edited in another window after you started editing here. Keep your version to replace it, or use the other version and discard your edits.")
+        }
+        #if os(macOS)
+        .alert("Quit Without Saving?", isPresented: $model.isConfirmingQuit) {
+            Button("Save Transcript…") { export(.text) }
+            Button("Quit Anyway", role: .destructive) {
+                model.discardUnsavedResult()
+                NSApplication.shared.terminate(nil)
+            }
+            Button("Cancel", role: .cancel) {}
+        } message: {
+            Text("The transcript of “\(model.unsavedResultName ?? "")” couldn’t be saved to history and will be lost.")
+        }
+        #endif
         .alert("Language Not Supported", isPresented: Binding(
             get: { model.languageWarning != nil },
             set: { if !$0 { model.hideLanguageWarning() } }

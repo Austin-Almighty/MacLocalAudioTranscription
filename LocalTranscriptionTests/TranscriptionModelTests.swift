@@ -404,7 +404,9 @@ final class TranscriptionEditingSafetyTests {
         #expect(model.endEditing())
         #expect(try await history.record(for: first.id).transcript == "Saved later.")
         #expect(model.transcript == "New recording.")
-        #expect(model.selection == nil)
+        // Saving is retried once editing ends, so the recording is now in History.
+        #expect(model.selection == finished.id)
+        #expect(history.entries.contains { $0.id == finished.id })
     }
 
     @Test func switchingEntriesFirstShowsAWaitingRecording() async throws {
@@ -445,9 +447,7 @@ final class TranscriptionEditingSafetyTests {
         #expect(model.endEditing())
         let kept = Set(history.entries.map(\.fileName)).union([model.fileName])
         #expect(kept.contains("b.wav"))
-        withKnownIssue("Scenario 1: only the latest waiting recording is kept") {
-            #expect(kept.contains("a.wav"))
-        }
+        #expect(kept.contains("a.wav"))
     }
 
     /// Scenario 2: a second window editing the same entry must not silently overwrite the first window’s saved edit.
@@ -467,10 +467,100 @@ final class TranscriptionEditingSafetyTests {
 
         let onDisk = try await history.record(for: shared.id).transcript
         // Either A’s edit survives, or B is told its save conflicts instead of overwriting it.
-        withKnownIssue("Scenario 2: the last window to save wins") {
-            #expect(onDisk == "Words from window A." || !savedB)
-        }
+        #expect(onDisk == "Words from window A." || !savedB)
     }
+
+    @Test func waitingRecordingsThatStillCannotBeSavedAreNamed() async throws {
+        let first = entry("first.wav"), a = entry("a.wav"), b = entry("b.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Unsaved words.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(a, record: TranscriptRecord(transcript: "Recording A.", cues: []))
+        model.finishTranscription(b, record: TranscriptRecord(transcript: "Recording B.", cues: []))
+
+        model.discardDraft()
+        #expect(model.fileName == "b.wav")
+        #expect(model.errorMessage?.contains("“a.wav”") == true)
+        #expect(model.errorMessage?.contains("“b.wav”") == true)
+    }
+
+    @Test func aConflictingEditAsksAndCanKeepEitherVersion() async throws {
+        let shared = entry("shared.wav")
+        try history.save(shared, TranscriptRecord(transcript: "Original words.", cues: []))
+        let windowA = model(), windowB = model()
+        await windowA.select(shared.id)
+        await windowB.select(shared.id)
+        windowA.beginEditing()
+        windowB.beginEditing()
+        windowA.updateDraft("Words from window A.")
+        #expect(windowA.endEditing())
+        windowB.updateDraft("Words from window B.")
+
+        #expect(!windowB.endEditing())
+        #expect(windowB.editConflict)
+        #expect(try await history.record(for: shared.id).transcript == "Words from window A.")
+
+        windowB.keepMyVersion()
+        #expect(!windowB.editConflict)
+        #expect(try await history.record(for: shared.id).transcript == "Words from window B.")
+        #expect(windowB.endEditing())
+
+        // Window A now edits from an outdated version and takes the other one.
+        windowA.beginEditing()
+        windowA.updateDraft("Late words from A.")
+        #expect(!windowA.endEditing())
+        windowA.useOtherVersion()
+        #expect(!windowA.isEditing)
+        #expect(!windowA.editConflict)
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(windowA.transcript == "Words from window B.")
+        #expect(try await history.record(for: shared.id).transcript == "Words from window B.")
+    }
+
+    @Test func aWindowsOwnSavesNeverConflict() async throws {
+        let saved = entry("saved.wav")
+        try history.save(saved, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(saved.id)
+        model.beginEditing()
+        model.updateDraft("First save.")
+        #expect(model.saveDraft())
+        model.updateDraft("Second save.")
+        #expect(model.endEditing())
+        model.beginEditing()
+        model.updateDraft("After reopening.")
+        #expect(model.endEditing())
+        #expect(!model.editConflict)
+        #expect(try await history.record(for: saved.id).transcript == "After reopening.")
+    }
+
+    #if os(macOS)
+    @Test func quitAnywayDiscardsTheUnsavedRecording() throws {
+        let model = model()
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil)
+        window.delegate = delegate
+        defer { window.delegate = nil; window.close() }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(entry("unsaved.wav"), record: TranscriptRecord(transcript: "Only on screen.", cues: []))
+        #expect(model.unsavedResultName == "unsaved.wav")
+
+        let applicationDelegate = TranscriptApplicationDelegate()
+        #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateCancel)
+        #expect(model.isConfirmingQuit)
+        model.discardUnsavedResult()
+        #expect(model.unsavedResultName == nil)
+        #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateNow)
+    }
+    #endif
 
     #if os(macOS)
     /// Scenario 4: quitting must not silently discard a recording History couldn’t store.
@@ -489,9 +579,7 @@ final class TranscriptionEditingSafetyTests {
         try #require(model.transcript == "Only on screen.")
         try #require(model.selection == nil)
 
-        withKnownIssue("Scenario 4: quitting only checks drafts") {
-            #expect(TranscriptApplicationDelegate().applicationShouldTerminate(.shared) != .terminateNow)
-        }
+        #expect(TranscriptApplicationDelegate().applicationShouldTerminate(.shared) != .terminateNow)
     }
     #endif
 
