@@ -76,9 +76,8 @@ struct CueAlignmentTests {
     }
 }
 
-/// Scenario 8 characterisation: records what editing across a speaker change does today. The expected
-/// behavior hasn’t been decided (see FAILURE_SCENARIOS.md); change these when it is.
-struct SpeakerEditingCharacterisationTests {
+/// Scenario 8: editing across a speaker change keeps this behavior, as decided in FAILURE_SCENARIOS.md.
+struct SpeakerEditingTests {
     private let labelled = [SubtitleCue(start: 0, end: 0.9, text: "Hello there", speaker: 0),
                             SubtitleCue(start: 1, end: 1.9, text: "good morning.", speaker: 1)]
 
