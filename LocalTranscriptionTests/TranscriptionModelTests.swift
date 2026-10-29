@@ -218,7 +218,7 @@ final class TranscriptionEditingSafetyTests {
         #expect(model.selection == first.id)
         #expect(model.transcript == "Original words.")
         #expect(try await history.record(for: first.id).transcript == "Original words.")
-        #expect(model.errorMessage != nil)
+        #expect(model.editSaveError != nil)
 
         try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: history.directory.path)
         #expect(model.endEditing())
@@ -316,6 +316,116 @@ final class TranscriptionEditingSafetyTests {
         #expect(model.endEditing())
     }
 
+    @Test func discardingAnUnsavableDraftLetsThePersonMoveOn() async throws {
+        let first = entry("first.wav"), other = entry("other.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        try history.save(other, TranscriptRecord(transcript: "Other transcript.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Unsaved words.")
+        let backup = history.directory.appending(path: "\(first.id.uuidString).original.transcript.json")
+        try Data("invalid JSON".utf8).write(to: backup)
+
+        await model.select(other.id)
+        #expect(model.selection == first.id)
+        #expect(model.isEditing)
+        #expect(model.editSaveError != nil)
+
+        model.discardDraft()
+        #expect(!model.isEditing)
+        #expect(model.editSaveError == nil)
+        #expect(model.transcript == "Original words.")
+        await model.select(other.id)
+        #expect(model.selection == other.id)
+        #expect(model.transcript == "Other transcript.")
+        #expect(try await history.record(for: first.id).transcript == "Original words.")
+    }
+
+    @Test func repeatedAutosaveFailuresAreReportedOnce() async throws {
+        let first = entry("first.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Unsaved words.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+
+        model.autosaveDraft()
+        #expect(model.editSaveError != nil)
+        model.keepEditing()
+        #expect(model.editSaveError == nil)
+        model.autosaveDraft()
+        model.autosaveDraft()
+        #expect(model.editSaveError == nil)
+        #expect(model.errorMessage == nil)
+        // Done, switching, closing, and quitting always ask again.
+        #expect(!model.endEditing())
+        #expect(model.editSaveError != nil)
+        #expect(model.draft == "Unsaved words.")
+    }
+
+    @Test func aRecordingThatCannotBeSavedWaitsUntilEditingEnds() async throws {
+        let first = entry("first.wav"), finished = entry("finished.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Unsaved words.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        let completed = TranscriptRecord(transcript: "New recording.", cues: [])
+        model.finishTranscription(finished, record: completed)
+
+        #expect(model.selection == first.id)
+        #expect(model.draft == "Unsaved words.")
+        #expect(!history.entries.contains { $0.id == finished.id })
+
+        model.discardDraft()
+        #expect(model.transcript == "New recording.")
+        #expect(model.fileName == "finished.wav")
+        #expect(model.selection == nil)
+        #expect(model.errorMessage?.contains("“finished.wav” couldn’t be saved to history") == true)
+    }
+
+    @Test func aWaitingRecordingIsShownOnceTheDraftSaves() async throws {
+        let first = entry("first.wav"), finished = entry("finished.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Saved later.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(finished, record: TranscriptRecord(transcript: "New recording.", cues: []))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        #expect(model.endEditing())
+        #expect(try await history.record(for: first.id).transcript == "Saved later.")
+        #expect(model.transcript == "New recording.")
+        #expect(model.selection == nil)
+    }
+
+    @Test func switchingEntriesFirstShowsAWaitingRecording() async throws {
+        let first = entry("first.wav"), other = entry("other.wav"), finished = entry("finished.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        try history.save(other, TranscriptRecord(transcript: "Other transcript.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Saved later.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(finished, record: TranscriptRecord(transcript: "New recording.", cues: []))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        await model.select(other.id)
+        #expect(model.transcript == "New recording.")
+        await model.select(other.id)
+        #expect(model.transcript == "Other transcript.")
+    }
+
     #if os(macOS)
     @Test func nativeCloseAndQuitKeepADraftUntilItCanBeSaved() async throws {
         let saved = entry("saved.wav")
@@ -350,6 +460,31 @@ final class TranscriptionEditingSafetyTests {
         #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateNow)
         #expect(!model.isEditing)
         #expect(try await history.record(for: saved.id).transcript == "Words saved while quitting.")
+    }
+
+    @Test func nativeCloseAndQuitSucceedAfterDiscardingAnUnsavableDraft() async throws {
+        let saved = entry("saved.wav")
+        try history.save(saved, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(saved.id)
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil)
+        window.delegate = delegate
+        defer { window.delegate = nil; window.close() }
+        let applicationDelegate = TranscriptApplicationDelegate()
+
+        model.beginEditing()
+        model.updateDraft("Words that can’t be saved.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        #expect(!delegate.windowShouldClose(window))
+        #expect(model.editSaveError != nil)
+
+        model.discardDraft()
+        #expect(delegate.windowShouldClose(window))
+        #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateNow)
     }
 
     @Test func nativeClosePreservesTheOriginalWindowDelegate() {

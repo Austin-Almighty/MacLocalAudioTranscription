@@ -94,7 +94,7 @@ struct ContentView: View {
         // Closing the window saves any edits in progress.
         .onDisappear { model.endEditing() }
         // Save edits when the app moves to the background or quits, not only when the window closes.
-        .onChange(of: scenePhase) { if scenePhase != .active { model.saveDraft() } }
+        .onChange(of: scenePhase) { if scenePhase != .active { model.autosaveDraft() } }
         #if os(macOS)
         .background(TranscriptWindowCloseGuard(model: model).allowsHitTesting(false))
         .onReceive(NotificationCenter.default.publisher(for: NSApplication.willTerminateNotification)) { _ in
@@ -130,6 +130,15 @@ struct ContentView: View {
             Button("OK", role: .cancel) { model.errorMessage = nil }
         } message: {
             Text(model.errorMessage ?? "")
+        }
+        .alert("Edits Not Saved", isPresented: Binding(
+            get: { model.editSaveError != nil },
+            set: { if !$0 { model.keepEditing() } }
+        )) {
+            Button("Discard Edits", role: .destructive) { model.discardDraft() }
+            Button("Keep Editing", role: .cancel) { model.keepEditing() }
+        } message: {
+            Text((model.editSaveError ?? "") + "\n\nDiscarding keeps the transcript as it was last saved.")
         }
         .alert("Language Not Supported", isPresented: Binding(
             get: { model.languageWarning != nil },
