@@ -4,7 +4,7 @@ Oct 28, 2026 · Austin Liao
 
 ## Summary
 
-Fifteen failure scenarios remain after PR #2. Six of them look like real bugs, four of which can lose a transcript or an edit. None is confirmed yet: each comes from reading the code, not from a failing test.
+Fifteen failure scenarios remain after PR #2. Six of them looked like real bugs, four of which could lose a transcript or an edit. Tests in PR #4 confirmed scenarios 1, 2 and 4, and PR #5 fixed them; PR #6 fixes gaps a later review found in those fixes. Scenario 3 did not reproduce in a manual check, because SwiftUI queued the two alerts. The others are still unconfirmed: each comes from reading the code, not from a failing test.
 
 The plan is to confirm before fixing. Scenarios 1, 2, 4 and 7 each need only a unit test to confirm or rule out; scenario 3 needs a short manual check. Fixes follow only for what fails.
 
@@ -61,11 +61,12 @@ Five pieces of test setup cover all fifteen scenarios. Only the first needs a ch
 Four phases, each a separate PR. Every fix starts as a failing test, as in PR #2.
 
 1. **Confirm.** Write tests only, no fixes, for 1, 2, 4, 7, 11, 13 and 15, and run the manual check for 3. Result: a list of which scenarios are real.
-   - [ ] Unit tests for 1, 2, 4, 13 and 15
+   - [x] Unit tests for 1, 2 and 4 (PR #4)
+   - [ ] Unit tests for 13 and 15
    - [ ] Randomised tests for 7 and 11
-   - [ ] Manual check for 3 in the isolated app
+   - [x] Manual check for 3 in the isolated app: not reproduced; the language warning wasn’t tried
 2. **Fix data loss.** Fix whatever phase 1 confirmed among 1, 2 and 4; add the file-operation seam, then test and fix 5.
-   - [ ] Fixes for confirmed 1, 2 and 4
+   - [x] Fixes for 1, 2 and 4 (PR #5, with gaps fixed in PR #6)
    - [ ] File-operation seam in History
    - [ ] Test and fix for 5
 3. **Speaker quality.** Fix 7 and 11, settle the expected behavior for 8, and measure 9 and 10.
@@ -86,4 +87,4 @@ PR #2 covered these, so they are not repeated here:
 - A failed save offers Discard Edits and Keep Editing; switching, Revert, Copy, Export, closing and quitting no longer trap the window. Covered by model tests and the UI-23 check in the app (`verification/edit-save-failure-check-results.md`).
 - Repeated autosave failures are reported once.
 - A recording that can’t be saved while a draft can’t be saved waits and appears when editing ends. Covered by model tests only, not in the app.
-- The full macOS suite passes: 118 tests, with 17 real-model tests skipped because the models aren’t cached on the test machine.
+- The full macOS suite passed with 118 tests after PR #2, and passes with 130 after PR #6. The 17 real-model tests are skipped because the models aren’t cached on the test machine.
