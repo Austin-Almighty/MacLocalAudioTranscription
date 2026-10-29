@@ -30,7 +30,7 @@ These affect label quality more than data safety; no recognized word is ever dro
 | # | Scenario | How to test | Fix plan |
 | --- | --- | --- | --- |
 | 7 | Words in gaps between speaker turns, or tied between two speakers, get no label and become separate unlabelled paragraphs | Unit test with turns that leave short gaps; check the plain text for paragraphs without “Speaker N:” | Give such a word the nearest turn’s speaker within a short window, else the previous word’s |
-| 8 | Editing across a speaker change (deleting all of one speaker’s words, pasting across the boundary) gives words the wrong speaker | Unit test of cue realignment with labelled cues | Decide the expected behavior first, then test it |
+| 8 | Editing across a speaker change (deleting all of one speaker’s words, pasting across the boundary) gives words the wrong speaker | Unit test of cue realignment with labelled cues | Decided: keep the current behavior, now covered by `SpeakerEditingTests` |
 | 9 | First use of Who while offline | Isolated app with an empty Who cache under `Scripts/offline.sb` | Expected: transcript kept, a clear error; fix only if it hangs or says nothing |
 | 10 | Long recordings: Who reads the whole file | Run the 20-minute file under `build/manual-checks/`; record time and peak memory | If memory is too high, warn above a length or process in parts |
 | 11 | Voz word timings out of order or overlapping; the matching code assumes time order | Randomised test with shuffled and overlapping words | Sort words by start time before matching |
@@ -65,7 +65,7 @@ Four phases, each a separate PR. Every fix starts as a failing test, as in PR #2
    - [x] Unit tests for 13 and 15
      - [x] 13: the error is clear and the edit stays intact already; Revert to Original is now hidden when the original copy is missing
      - [x] 15: not reproduced; deleting the entry in another window already clears the alert and drops the draft, so the test stays as a regression test
-   - [ ] Randomised tests for 7 and 11
+   - [x] Randomised tests for 7 and 11: both confirmed; shuffled words lost labels in 24 of 25 seeded cases
    - [x] Manual check for 3 in the isolated app: not reproduced; the language warning wasn’t tried
 2. **Fix data loss.** Fix whatever phase 1 confirmed among 1, 2 and 4; add the file-operation seam, then test and fix 5.
    - [x] Fixes for 1, 2 and 4 (PR #5, with gaps fixed in PR #6)
@@ -73,8 +73,8 @@ Four phases, each a separate PR. Every fix starts as a failing test, as in PR #2
    - [x] File-operation seam in History (`HistoryFiles`, with a test double that fails one chosen read or write)
    - [x] Test and fix for 5: confirmed (the new transcript stayed after the summary failed); `update` now restores it
 3. **Speaker quality.** Fix 7 and 11, settle the expected behavior for 8, and measure 9 and 10.
-   - [ ] Nearest-turn fallback (7) and sorting (11)
-   - [ ] Decision and tests for 8
+   - [x] Nearest-turn fallback (7) and sorting (11): the window is `Subtitles.maxPause` (1 s), the pause that already ends a cue
+   - [x] Decision and tests for 8: keep the current behavior, covered by `SpeakerEditingTests`. A replaced word keeps its speaker, typed words join the speaker before, and a paste is spread by position; splitting by proportion or leaving words unlabelled was rejected
    - [ ] Offline first use (9) and long-file measurements (10)
 4. **Platform.** Update the simulator runtime, then test 6; run the disk-full check for 14.
    - [ ] Simulator runtime updated
@@ -90,4 +90,4 @@ PR #2 covered these, so they are not repeated here:
 - A failed save offers Discard Edits and Keep Editing; switching, Revert, Copy, Export, closing and quitting no longer trap the window. Covered by model tests and the UI-23 check in the app (`verification/edit-save-failure-check-results.md`).
 - Repeated autosave failures are reported once.
 - A recording that can’t be saved while a draft can’t be saved waits and appears when editing ends. Covered by model tests only, not in the app.
-- The full macOS suite passed with 118 tests after PR #2 and 130 after PR #6, and passes with 139 after the History file-safety fixes (PR #7) and the export and scenario 15 tests (PR #8). The 17 real-model tests are skipped because the models aren’t cached on the test machine.
+- The full macOS suite passed with 118 tests after PR #2, 130 after PR #6 and 139 after the History file-safety fixes (PR #7) and the export and scenario 15 tests (PR #8), and passes with 146 after the speaker-matching fixes (PR #9). The 17 real-model tests are skipped because the models aren’t cached on the test machine.
