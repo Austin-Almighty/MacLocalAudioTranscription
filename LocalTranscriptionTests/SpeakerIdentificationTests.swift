@@ -21,17 +21,37 @@ struct SpeakerAttributionTests {
                          SubtitleCue(start: 1, end: 1.9, text: "good morning.", speaker: 1)])
     }
 
-    @Test func usesTheLargestOverlapLeavingGapsAndTiesUnlabelled() {
-        let words = [Word(text: "gap", start: 0, end: 0.4),
-                     Word(text: "overlap", start: 1, end: 2),
-                     Word(text: "tie", start: 3, end: 4),
-                     Word(text: "end", start: 6, end: 7)]
-        let turns = [Turn(start: 1.5, end: 2, speaker: 1), Turn(start: 1, end: 2, speaker: 0),
-                     Turn(start: 3, end: 4, speaker: 0), Turn(start: 3, end: 4, speaker: 1)]
+    @Test func usesTheLargestOverlapThenTheNearestTurnThenThePreviousWord() {
+        let words = [Word(text: "far", start: 0, end: 0.4),
+                     Word(text: "overlap", start: 5, end: 6),
+                     Word(text: "near", start: 6.5, end: 6.8),
+                     Word(text: "tie", start: 9, end: 10),
+                     Word(text: "end", start: 12, end: 13)]
+        let turns = [Turn(start: 5.5, end: 6, speaker: 1), Turn(start: 5, end: 6, speaker: 0),
+                     Turn(start: 7, end: 8, speaker: 1),
+                     Turn(start: 9, end: 10, speaker: 0), Turn(start: 9, end: 10, speaker: 1)]
         let speakers = SpeakerAttribution.speakers(for: words, turns: turns)
-        #expect(speakers == [nil, 0, nil, nil])
-        #expect(Subtitles.cues(from: words, speakers: speakers).map(\.text) == ["gap", "overlap", "tie", "end"])
-        #expect(SpeakerAttribution.speakers(for: words, turns: []) == [nil, nil, nil, nil])
+        // “far” is over a second from any turn with no word before it; “near” takes the closer turn
+        // after it over the previous word’s speaker; “tie” and “end” keep the previous word’s speaker.
+        #expect(speakers == [nil, 0, 1, 1, 1])
+        #expect(Subtitles.cues(from: words, speakers: speakers).map(\.text) == ["far", "overlap", "near", "tie", "end"])
+        #expect(SpeakerAttribution.speakers(for: words, turns: []) == [nil, nil, nil, nil, nil])
+    }
+
+    @Test func wordsInShortGapsAndTiesJoinANearbySpeakerInsteadOfAnUnlabelledParagraph() {
+        // Scenario 7: Who leaves short silences between turns, where Voz often places “um” or a breath.
+        let words = [Word(text: "Hi", start: 0, end: 0.5),
+                     Word(text: "um", start: 1.2, end: 1.4),
+                     Word(text: "yes", start: 2.1, end: 2.5),
+                     Word(text: "so", start: 3.3, end: 3.5),
+                     Word(text: "right.", start: 4.1, end: 4.5)]
+        let turns = [Turn(start: 0, end: 1, speaker: 0), Turn(start: 2, end: 3, speaker: 1),
+                     Turn(start: 4, end: 5, speaker: 0), Turn(start: 4, end: 5, speaker: 1)]
+        let speakers = SpeakerAttribution.speakers(for: words, turns: turns)
+        #expect(speakers == [0, 0, 1, 1, 1])
+        let text = Subtitles.plainText("Hi um yes so right.", cues: Subtitles.cues(from: words, speakers: speakers))
+        #expect(text.components(separatedBy: "\n\n").allSatisfy { $0.hasPrefix("Speaker ") })
+        #expect(text == "Speaker 1: Hi um\n\nSpeaker 2: yes so right.")
     }
 
     @Test func discardsInvalidTurnsAndKeepsLongRecordingsInOrder() {
@@ -40,6 +60,60 @@ struct SpeakerAttributionTests {
         let invalid = [Turn(start: .nan, end: 1, speaker: 0), Turn(start: 0, end: .infinity, speaker: 1),
                        Turn(start: 1, end: 0, speaker: 2), Turn(start: 0, end: 10_000, speaker: -1)]
         #expect(SpeakerAttribution.speakers(for: words, turns: invalid + valid) == (0..<10_000).map { Optional($0 % 4) })
+    }
+
+    @Test(arguments: 1...25 as ClosedRange<UInt64>)
+    func shuffledAndOverlappingWordsKeepEveryWordTimingAndNearbyLabel(seed: UInt64) {
+        // Scenario 11: Voz’s words may arrive out of order or overlap; the result must not depend on it.
+        var random = SeededGenerator(seed: seed)
+        var turns: [Turn] = []
+        var time = 0.0
+        for _ in 0..<Int.random(in: 3...12, using: &random) {
+            time += Double.random(in: -0.5...1.5, using: &random)
+            let length = Double.random(in: 0.2...3, using: &random)
+            turns.append(Turn(start: max(0, time), end: max(0, time) + length, speaker: Int.random(in: 0...3, using: &random)))
+            time += length
+        }
+        let sorted = (0..<Int.random(in: 1...60, using: &random)).map { index in
+            let start = Double.random(in: 0...(time + 2), using: &random)
+            return Word(text: "w\(index)", start: start, end: start + Double.random(in: 0...1.2, using: &random))
+        }.sorted { ($0.start, $0.end) < ($1.start, $1.end) }
+        let words = sorted.shuffled(using: &random)
+
+        let speakers = SpeakerAttribution.speakers(for: words, turns: turns)
+        #expect(speakers.count == words.count, "seed \(seed)")
+        let bySortedOrder = SpeakerAttribution.speakers(for: sorted, turns: turns)
+        let byText = Dictionary(uniqueKeysWithValues: zip(words.map(\.text), speakers))
+        #expect(sorted.map { byText[$0.text] ?? nil } == bySortedOrder, "seed \(seed): order changed the labels")
+
+        var previous: Int?
+        for (word, speaker) in zip(sorted, bySortedOrder) {
+            var overlaps: [Int: Double] = [:]
+            for turn in turns {
+                let overlap = min(word.end, turn.end) - max(word.start, turn.start)
+                if overlap > 0 { overlaps[turn.speaker, default: 0] += overlap }
+            }
+            let longest = overlaps.values.max()
+            let winners = overlaps.filter { abs($0.value - (longest ?? 0)) < 0.000_001 }.keys
+            if winners.count == 1 {
+                #expect(speaker == winners.first, "seed \(seed): \(word.text) has a clear overlap")
+            } else {
+                let nearby = turns.filter { max($0.start - word.end, word.start - $0.end) <= SpeakerAttribution.window }
+                #expect(speaker == nil || speaker == previous || nearby.contains { $0.speaker == speaker },
+                        "seed \(seed): \(word.text) took a label from a distant turn")
+            }
+            previous = speaker
+        }
+
+        // Every word reaches the cues in its original order, and each cue starts at its first word.
+        let cues = Subtitles.cues(from: words, speakers: speakers)
+        #expect(cues.flatMap { $0.text.split(whereSeparator: \.isWhitespace).map(String.init) } == words.map(\.text),
+                "seed \(seed)")
+        var next = 0
+        for cue in cues {
+            #expect(cue.start == words[next].start, "seed \(seed)")
+            next += cue.text.split(whereSeparator: \.isWhitespace).count
+        }
     }
 
     @Test func exportsSpeakerLabelsWithoutChangingTheEditableText() {
@@ -71,6 +145,21 @@ struct SpeakerAttributionTests {
         #expect(old.cues.first?.speaker == nil)
         #expect(Subtitles.plainText(old.transcript, cues: old.cues) == "Hello.")
         #expect(try JSONDecoder().decode(TranscriptRecord.self, from: JSONEncoder().encode(old)) == old)
+    }
+}
+
+/// SplitMix64, so each randomised case is the same on every run and a failing seed can be replayed.
+private struct SeededGenerator: RandomNumberGenerator {
+    private var state: UInt64
+
+    init(seed: UInt64) { state = seed }
+
+    mutating func next() -> UInt64 {
+        state &+= 0x9E37_79B9_7F4A_7C15
+        var z = state
+        z = (z ^ (z >> 30)) &* 0xBF58_476D_1CE4_E5B9
+        z = (z ^ (z >> 27)) &* 0x94D0_49BB_1331_11EB
+        return z ^ (z >> 31)
     }
 }
 

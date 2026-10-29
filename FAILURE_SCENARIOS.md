@@ -63,15 +63,15 @@ Four phases, each a separate PR. Every fix starts as a failing test, as in PR #2
 1. **Confirm.** Write tests only, no fixes, for 1, 2, 4, 7, 11, 13 and 15, and run the manual check for 3. Result: a list of which scenarios are real.
    - [x] Unit tests for 1, 2 and 4 (PR #4)
    - [ ] Unit tests for 13 and 15
-   - [ ] Randomised tests for 7 and 11
+   - [x] Randomised tests for 7 and 11: both confirmed; shuffled words lost labels in 24 of 25 seeded cases
    - [x] Manual check for 3 in the isolated app: not reproduced; the language warning wasn’t tried
 2. **Fix data loss.** Fix whatever phase 1 confirmed among 1, 2 and 4; add the file-operation seam, then test and fix 5.
    - [x] Fixes for 1, 2 and 4 (PR #5, with gaps fixed in PR #6)
    - [ ] File-operation seam in History
    - [ ] Test and fix for 5
 3. **Speaker quality.** Fix 7 and 11, settle the expected behavior for 8, and measure 9 and 10.
-   - [ ] Nearest-turn fallback (7) and sorting (11)
-   - [ ] Decision and tests for 8
+   - [x] Nearest-turn fallback (7) and sorting (11): the window is `Subtitles.maxPause` (1 s), the pause that already ends a cue
+   - [ ] Decision and tests for 8: current behavior recorded in `SpeakerEditingCharacterisationTests`; the decision is still open
    - [ ] Offline first use (9) and long-file measurements (10)
 4. **Platform.** Update the simulator runtime, then test 6; run the disk-full check for 14.
    - [ ] Simulator runtime updated
