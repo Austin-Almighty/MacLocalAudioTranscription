@@ -44,7 +44,7 @@ These probably work but have never been tested.
 | --- | --- | --- | --- |
 | 13 | The original copy is missing when reverting (deleted by hand or by a sync tool) | Unit test: delete the original file, revert, expect a clear error with the edit intact | Hide Revert to Original when no original copy exists |
 | 14 | A really full disk, not just a read-only folder; partial writes may behave differently | Mount a tiny disk image (`hdiutil create -size 2m`) as the isolated app’s home | Depends on what the check shows |
-| 15 | The entry is deleted in another window while Edits Not Saved is open | Unit test with two models: the alert state clears, the draft is dropped, nothing crashes | Fix only if the test fails |
+| 15 | The entry is deleted in another window while Edits Not Saved is open | Unit test with two models: the alert state clears, the draft is dropped, nothing crashes | Tested: not reproduced, no fix needed |
 
 ## Test tools to build
 
@@ -62,13 +62,15 @@ Four phases, each a separate PR. Every fix starts as a failing test, as in PR #2
 
 1. **Confirm.** Write tests only, no fixes, for 1, 2, 4, 7, 11, 13 and 15, and run the manual check for 3. Result: a list of which scenarios are real.
    - [x] Unit tests for 1, 2 and 4 (PR #4)
-   - [ ] Unit tests for 13 and 15
+   - [x] Unit tests for 13 and 15
      - [x] 13: the error is clear and the edit stays intact already; Revert to Original is now hidden when the original copy is missing
+     - [x] 15: not reproduced; deleting the entry in another window already clears the alert and drops the draft, so the test stays as a regression test
    - [ ] Randomised tests for 7 and 11
    - [x] Manual check for 3 in the isolated app: not reproduced; the language warning wasn’t tried
 2. **Fix data loss.** Fix whatever phase 1 confirmed among 1, 2 and 4; add the file-operation seam, then test and fix 5.
    - [x] Fixes for 1, 2 and 4 (PR #5, with gaps fixed in PR #6)
-   - [x] File-operation seam in History (`HistoryFiles`, with a test double that fails one chosen write)
+   - [x] Exporting the unsaved recording on screen with Save Transcript… or Export Subtitles now forgets it, so closing and quitting stop asking; a recording that finishes during the save panel stays kept
+   - [x] File-operation seam in History (`HistoryFiles`, with a test double that fails one chosen read or write)
    - [x] Test and fix for 5: confirmed (the new transcript stayed after the summary failed); `update` now restores it
 3. **Speaker quality.** Fix 7 and 11, settle the expected behavior for 8, and measure 9 and 10.
    - [ ] Nearest-turn fallback (7) and sorting (11)
@@ -88,4 +90,4 @@ PR #2 covered these, so they are not repeated here:
 - A failed save offers Discard Edits and Keep Editing; switching, Revert, Copy, Export, closing and quitting no longer trap the window. Covered by model tests and the UI-23 check in the app (`verification/edit-save-failure-check-results.md`).
 - Repeated autosave failures are reported once.
 - A recording that can’t be saved while a draft can’t be saved waits and appears when editing ends. Covered by model tests only, not in the app.
-- The full macOS suite passed with 118 tests after PR #2, passes with 130 after PR #6, and with 133 after the History file-safety fixes. The 17 real-model tests are skipped because the models aren’t cached on the test machine.
+- The full macOS suite passed with 118 tests after PR #2 and 130 after PR #6, and passes with 139 after the History file-safety fixes (PR #7) and the export and scenario 15 tests (PR #8). The 17 real-model tests are skipped because the models aren’t cached on the test machine.

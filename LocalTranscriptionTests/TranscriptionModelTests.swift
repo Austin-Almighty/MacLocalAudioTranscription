@@ -621,6 +621,100 @@ final class TranscriptionEditingSafetyTests {
         #expect(model.unsavedResults.isEmpty)
     }
 
+    /// Saving the unsaved recording on screen with Save Transcript… keeps its words, so closing and
+    /// quitting stop asking about it; a recording that arrives while the save panel is open stays kept.
+    @Test func exportingTheShownUnsavedRecordingForgetsOnlyThatOne() throws {
+        let model = model()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        let a = entry("a.wav"), b = entry("b.wav")
+        model.finishTranscription(a, record: TranscriptRecord(transcript: "Recording A.", cues: []))
+        let exporting = model.shownUnsavedID
+        #expect(exporting == a.id)
+
+        // B finishes while the save panel for A is open, and replaces A on screen.
+        model.finishTranscription(b, record: TranscriptRecord(transcript: "Recording B.", cues: []))
+        model.forgetExportedRecording(exporting)
+        #expect(model.unsavedResults.map(\.entry.fileName) == ["b.wav"])
+        #expect(model.shownUnsavedID == b.id)
+
+        model.forgetExportedRecording(model.shownUnsavedID)
+        #expect(model.unsavedResults.isEmpty)
+        #expect(model.shownUnsavedID == nil)
+    }
+
+    /// Exporting a saved entry, or anything while the unsaved recording is off screen, forgets nothing.
+    @Test func exportingASavedEntryKeepsUnsavedRecordings() async throws {
+        let saved = entry("saved.wav")
+        try history.save(saved, TranscriptRecord(transcript: "Saved words.", cues: []))
+        let model = model()
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(entry("unsaved.wav"), record: TranscriptRecord(transcript: "Only kept here.", cues: []))
+        await model.select(saved.id)
+
+        #expect(model.shownUnsavedID == nil)
+        model.forgetExportedRecording(model.shownUnsavedID)
+        #expect(model.unsavedResults.map(\.entry.fileName) == ["unsaved.wav"])
+    }
+
+    /// A recording that waited on an unsavable draft counts as shown once editing ends.
+    @Test func aWaitingRecordingShownAfterEditingCanBeExported() async throws {
+        let first = entry("first.wav"), waiting = entry("waiting.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Unsaved words.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(waiting, record: TranscriptRecord(transcript: "Waiting.", cues: []))
+        #expect(model.shownUnsavedID == nil)
+
+        model.discardDraft()
+        #expect(model.fileName == "waiting.wav")
+        #expect(model.shownUnsavedID == waiting.id)
+        model.forgetExportedRecording(model.shownUnsavedID)
+        #expect(model.unsavedResults.isEmpty)
+    }
+
+    /// Scenario 15: another window deletes the entry while this window’s Edits Not Saved alert is open.
+    @Test func deletingAnEntryElsewhereClearsAnOpenEditSaveError() async throws {
+        let shared = entry("shared.wav")
+        try history.save(shared, TranscriptRecord(transcript: "Original words.", cues: []))
+        let windowA = model(), windowB = model()
+        await windowA.select(shared.id)
+        await windowB.select(shared.id)
+        windowB.beginEditing()
+        windowB.updateDraft("Words from window B.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        #expect(!windowB.saveDraft())
+        try #require(windowB.editSaveError != nil)
+
+        // History becomes writable again, and window A deletes the entry while B’s alert is open.
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        windowA.deleteEntry(shared.id)
+        // Each window reconciles when History’s entries change.
+        windowB.reconcileWithHistory()
+
+        #expect(windowB.editSaveError == nil)
+        #expect(windowB.draft == nil)
+        #expect(!windowB.isEditing)
+        #expect(windowB.selection == nil)
+        #expect(windowB.fileName.isEmpty)
+        #expect(!windowB.canEdit)
+        // The alert’s buttons may still fire as it closes; neither brings back the entry or the draft.
+        windowB.keepEditing()
+        windowB.discardDraft()
+        windowB.autosaveDraft()
+        #expect(windowB.endEditing())
+        #expect(!windowB.isEditing)
+        #expect(history.entries.isEmpty)
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(shared.id.uuidString).transcript.json").path))
+    }
+
     #if os(macOS)
     /// Scenario 4 and the alert collision: quitting asks through the injected prompt, not a SwiftUI alert
     /// that another alert could hide, and asks again for a recording that arrived meanwhile.
