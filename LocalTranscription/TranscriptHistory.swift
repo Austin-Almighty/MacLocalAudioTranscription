@@ -135,7 +135,14 @@ final class TranscriptHistory {
     /// so it can be restored.
     func update(_ id: UUID, _ record: TranscriptRecord, editedAt date: Date) throws {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { throw CocoaError(.fileNoSuchFile) }
-        let previous = try files.read(recordURL(id))
+        // Kept only to undo a failed save; an unreadable transcript doesn’t stop the edit.
+        let previous: Data?
+        do {
+            previous = try files.read(recordURL(id))
+        } catch {
+            Self.logger.error("Couldn’t read the transcript before editing: \(error.localizedDescription, privacy: .public)")
+            previous = nil
+        }
         let keepsNewOriginal = !files.exists(originalURL(id))
         if keepsNewOriginal {
             try files.copy(recordURL(id), to: originalURL(id))
@@ -154,9 +161,13 @@ final class TranscriptHistory {
     }
 
     /// Undoes a failed update; a failure here is logged, since the caller reports the first one.
-    private func restore(_ previous: Data, of id: UUID, removingOriginal: Bool) {
+    private func restore(_ previous: Data?, of id: UUID, removingOriginal: Bool) {
         do {
-            try files.write(previous, to: recordURL(id))
+            if let previous {
+                try files.write(previous, to: recordURL(id))
+            } else if files.exists(recordURL(id)) {
+                try files.remove(recordURL(id))
+            }
             if removingOriginal { try files.remove(originalURL(id)) }
         } catch {
             Self.logger.error("Couldn’t restore the transcript after a failed edit: \(error.localizedDescription, privacy: .public)")
