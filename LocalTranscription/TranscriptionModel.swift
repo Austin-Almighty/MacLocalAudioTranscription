@@ -76,6 +76,8 @@ final class TranscriptionModel {
     @ObservationIgnored private var waitingResults: [UnsavedResult] = []
     /// The entry’s edited date when this window last loaded or saved it, to notice another window’s save.
     @ObservationIgnored private var editingBase: Date?
+    /// The entry on screen, kept even when an unsaved recording is shown unselected.
+    private var shownEntryID: UUID?
     private var queue: [QueuedFile] = []
     @ObservationIgnored let history: TranscriptHistory
 
@@ -370,6 +372,19 @@ final class TranscriptionModel {
         waitingResults.removeAll { ids.contains($0.entry.id) }
     }
 
+    /// The unsaved recording on screen, if any, so exporting it can stop closing and quitting from asking.
+    var shownUnsavedID: UUID? {
+        guard let shownEntryID, unsavedResults.contains(where: { $0.entry.id == shownEntryID }) else { return nil }
+        return shownEntryID
+    }
+
+    /// Forgets the unsaved recording that was on screen when an export started, once that export
+    /// succeeds. Any format keeps its words, so all count. A recording that arrived meanwhile stays kept.
+    func forgetExportedRecording(_ id: UUID?) {
+        guard let id else { return }
+        discardUnsavedResults(unsavedResults.filter { $0.entry.id == id })
+    }
+
     /// Shows a saved transcript, or the empty view for nil. Ignored while busy, because the
     /// running transcription will replace whatever is shown when it finishes.
     func select(_ id: UUID?) async {
@@ -587,6 +602,7 @@ final class TranscriptionModel {
         isLoadingSelection = false
         contentVersion += 1
         selection = entry?.id
+        shownEntryID = entry?.id
         transcript = record?.transcript ?? ""
         cues = record?.cues ?? []
         displayTranscript = Subtitles.plainText(transcript, cues: cues)
