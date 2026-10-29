@@ -426,6 +426,75 @@ final class TranscriptionEditingSafetyTests {
         #expect(model.transcript == "Other transcript.")
     }
 
+    // MARK: Likely bugs from FAILURE_SCENARIOS.md
+
+    /// Scenario 1: neither recording may be lost when both arrive while a draft and History are unwritable.
+    @Test func twoRecordingsWaitingOnAnUnsavableDraftAreBothKept() async throws {
+        let first = entry("first.wav"), a = entry("a.wav"), b = entry("b.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Saved later.")
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(a, record: TranscriptRecord(transcript: "Recording A.", cues: []))
+        model.finishTranscription(b, record: TranscriptRecord(transcript: "Recording B.", cues: []))
+
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        #expect(model.endEditing())
+        let kept = Set(history.entries.map(\.fileName)).union([model.fileName])
+        #expect(kept.contains("b.wav"))
+        withKnownIssue("Scenario 1: only the latest waiting recording is kept") {
+            #expect(kept.contains("a.wav"))
+        }
+    }
+
+    /// Scenario 2: a second window editing the same entry must not silently overwrite the first window’s saved edit.
+    @Test func editsFromTwoWindowsOnOneEntryAreNotSilentlyOverwritten() async throws {
+        let shared = entry("shared.wav")
+        try history.save(shared, TranscriptRecord(transcript: "Original words.", cues: []))
+        let windowA = model(), windowB = model()
+        await windowA.select(shared.id)
+        await windowB.select(shared.id)
+        windowA.beginEditing()
+        windowB.beginEditing()
+
+        windowA.updateDraft("Words from window A.")
+        #expect(windowA.endEditing())
+        windowB.updateDraft("Words from window B.")
+        let savedB = windowB.endEditing()
+
+        let onDisk = try await history.record(for: shared.id).transcript
+        // Either A’s edit survives, or B is told its save conflicts instead of overwriting it.
+        withKnownIssue("Scenario 2: the last window to save wins") {
+            #expect(onDisk == "Words from window A." || !savedB)
+        }
+    }
+
+    #if os(macOS)
+    /// Scenario 4: quitting must not silently discard a recording History couldn’t store.
+    @Test func quittingWithAnUnsavedRecordingOnScreenIsNotSilent() throws {
+        let model = model()
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil)
+        window.delegate = delegate
+        defer { window.delegate = nil; window.close() }
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(entry("unsaved.wav"), record: TranscriptRecord(transcript: "Only on screen.", cues: []))
+        try #require(model.transcript == "Only on screen.")
+        try #require(model.selection == nil)
+
+        withKnownIssue("Scenario 4: quitting only checks drafts") {
+            #expect(TranscriptApplicationDelegate().applicationShouldTerminate(.shared) != .terminateNow)
+        }
+    }
+    #endif
+
     #if os(macOS)
     @Test func nativeCloseAndQuitKeepADraftUntilItCanBeSaved() async throws {
         let saved = entry("saved.wav")
