@@ -39,10 +39,14 @@ final class TranscriptionModel {
     private(set) var editSaveError: String?
     /// Another window saved this entry since editing began; saving waits for the person to choose.
     private(set) var editConflict = false
-    /// The file name of a shown recording that History couldn’t store, so quitting asks first.
-    private(set) var unsavedResultName: String?
-    /// Set when quitting was refused to ask about an unsaved recording.
-    var isConfirmingQuit = false
+    /// A finished recording History couldn’t store.
+    struct UnsavedResult: Sendable {
+        let entry: HistoryEntry
+        let record: TranscriptRecord
+    }
+    /// Finished recordings History couldn’t store, oldest first, kept until they’re saved, exported,
+    /// or discarded, so closing and quitting can ask first.
+    private(set) var unsavedResults: [UnsavedResult] = []
     private(set) var isLoadingSelection = false
     /// Changes whenever the shown transcript’s text does, so views can reset cheaply instead of
     /// comparing the whole transcript.
@@ -68,8 +72,8 @@ final class TranscriptionModel {
     @ObservationIgnored private var autosave: Task<Void, Never>?
     // Autosave stays quiet after a failure was reported, so a persistent failure doesn’t nag while typing.
     @ObservationIgnored private var reportedSaveFailure = false
-    /// Finished recordings that couldn’t be saved, retried and shown once editing ends so they aren’t lost.
-    @ObservationIgnored private var waitingResults: [(entry: HistoryEntry, record: TranscriptRecord)] = []
+    /// Unsaved recordings that arrived while a draft stayed on screen, shown and reported once editing ends.
+    @ObservationIgnored private var waitingResults: [UnsavedResult] = []
     /// The entry’s edited date when this window last loaded or saved it, to notice another window’s save.
     @ObservationIgnored private var editingBase: Date?
     private var queue: [QueuedFile] = []
@@ -276,9 +280,13 @@ final class TranscriptionModel {
     /// A recording that can’t be saved either waits on screen until editing ends.
     func finishTranscription(_ entry: HistoryEntry, record: TranscriptRecord) {
         let mayReplace = endEditing()
+        // History may be writable again, so earlier recordings get another chance first.
+        retryUnsavedResults()
         let saveError = saveResult(entry, record)
+        let result = UnsavedResult(entry: entry, record: record)
+        if saveError != nil { unsavedResults.append(result) }
         guard mayReplace else {
-            if saveError != nil { waitingResults.append((entry, record)) }
+            if saveError != nil { waitingResults.append(result) }
             return
         }
         showResult(entry, record, error: saveError)
@@ -287,7 +295,7 @@ final class TranscriptionModel {
     /// Saves a finished recording to History, returning why it couldn’t be saved. Recordings with
     /// no recognized speech aren’t saved.
     private func saveResult(_ entry: HistoryEntry, _ record: TranscriptRecord) -> String? {
-        guard !record.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return nil }
+        guard Self.hasSpeech(record) else { return nil }
         do {
             try history.save(entry, record)
             return nil
@@ -297,32 +305,69 @@ final class TranscriptionModel {
         }
     }
 
-    /// Shows a finished recording; one that failed to save is shown unselected, so it can’t be edited.
+    private static func hasSpeech(_ record: TranscriptRecord) -> Bool {
+        !record.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
+    /// Shows a finished recording. One that wasn’t saved is shown unselected, so it can’t be edited.
     private func showResult(_ entry: HistoryEntry, _ record: TranscriptRecord, error: String?) {
         selectionLoad += 1
         show(entry, record)
-        guard let error else { return }
-        selection = nil
-        unsavedResultName = entry.fileName
-        appendError(error)
+        if error != nil || !Self.hasSpeech(record) { selection = nil }
+        if let error { appendError(error) }
+    }
+
+    /// Retries saving every unsaved recording, returning why each one still couldn’t be saved, by entry ID.
+    @discardableResult
+    private func retryUnsavedResults() -> [UUID: String] {
+        var errors: [UUID: String] = [:]
+        unsavedResults = unsavedResults.filter { result in
+            guard let error = saveResult(result.entry, result.record) else { return false }
+            errors[result.entry.id] = error
+            return true
+        }
+        return errors
     }
 
     /// Retries saving the recordings that waited on editing, then shows the latest. Earlier ones
-    /// that still can’t be saved are named, since only one can stay on screen.
+    /// that still can’t be saved are named, since only one can stay on screen; they stay kept.
     private func showWaitingResults() {
         guard let latest = waitingResults.last else { return }
         let earlier = waitingResults.dropLast()
         waitingResults = []
-        for waiting in earlier {
-            if let error = saveResult(waiting.entry, waiting.record) { appendError(error) }
+        let errors = retryUnsavedResults()
+        for result in earlier {
+            if let error = errors[result.entry.id] { appendError(error) }
         }
-        showResult(latest.entry, latest.record, error: saveResult(latest.entry, latest.record))
+        showResult(latest.entry, latest.record, error: errors[latest.entry.id])
     }
 
-    /// Forgets a shown recording that History couldn’t store, after the person chose to quit anyway.
-    func discardUnsavedResult() {
-        unsavedResultName = nil
-        isConfirmingQuit = false
+    /// Writes the given unsaved recordings to a folder as plain text, then forgets them. Recordings
+    /// that arrived meanwhile stay kept. Returns the files written, which never replace existing ones.
+    @discardableResult
+    func exportUnsavedResults(_ results: [UnsavedResult], to folder: URL) throws -> [URL] {
+        var written: [URL] = []
+        for result in results {
+            let name = (result.entry.fileName as NSString).deletingPathExtension
+            var url = folder.appending(path: name + ".txt")
+            var copy = 2
+            while FileManager.default.fileExists(atPath: url.path) || written.contains(url) {
+                url = folder.appending(path: "\(name) \(copy).txt")
+                copy += 1
+            }
+            let text = TranscriptFormat.text.render(transcript: result.record.transcript, cues: result.record.cues)
+            try Data(text.utf8).write(to: url, options: .withoutOverwriting)
+            written.append(url)
+        }
+        discardUnsavedResults(results)
+        return written
+    }
+
+    /// Forgets the given unsaved recordings, after the person chose to lose or export them.
+    func discardUnsavedResults(_ results: [UnsavedResult]) {
+        let ids = Set(results.map(\.entry.id))
+        unsavedResults.removeAll { ids.contains($0.entry.id) }
+        waitingResults.removeAll { ids.contains($0.entry.id) }
     }
 
     /// Shows a saved transcript, or the empty view for nil. Ignored while busy, because the
@@ -540,7 +585,6 @@ final class TranscriptionModel {
 
     private func show(_ entry: HistoryEntry?, _ record: TranscriptRecord?) {
         isLoadingSelection = false
-        unsavedResultName = nil
         contentVersion += 1
         selection = entry?.id
         transcript = record?.transcript ?? ""

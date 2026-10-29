@@ -538,48 +538,188 @@ final class TranscriptionEditingSafetyTests {
         #expect(try await history.record(for: saved.id).transcript == "After reopening.")
     }
 
-    #if os(macOS)
-    @Test func quitAnywayDiscardsTheUnsavedRecording() throws {
+    // MARK: Review findings after PR #5
+
+    /// A recording History couldn’t store stays kept when a newer recording replaces it on screen.
+    @Test func anUnsavedRecordingIsKeptWhenANewerOneReplacesIt() async throws {
+        let first = entry("first.wav"), a = entry("a.wav"), b = entry("b.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
         let model = model()
-        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
-                              backing: .buffered, defer: false)
-        window.isReleasedWhenClosed = false
-        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil)
-        window.delegate = delegate
-        defer { window.delegate = nil; window.close() }
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        await model.select(first.id)
+        model.beginEditing()
+        model.updateDraft("Saved later.")
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
-        model.finishTranscription(entry("unsaved.wav"), record: TranscriptRecord(transcript: "Only on screen.", cues: []))
-        #expect(model.unsavedResultName == "unsaved.wav")
+        model.finishTranscription(a, record: TranscriptRecord(transcript: "Recording A.", cues: []))
+        // The draft saves but editing stays open, so A keeps waiting.
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        #expect(model.saveDraft())
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        model.finishTranscription(b, record: TranscriptRecord(transcript: "Recording B.", cues: []))
 
-        let applicationDelegate = TranscriptApplicationDelegate()
-        #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateCancel)
-        #expect(model.isConfirmingQuit)
-        model.discardUnsavedResult()
-        #expect(model.unsavedResultName == nil)
-        #expect(applicationDelegate.applicationShouldTerminate(.shared) == .terminateNow)
+        #expect(model.fileName == "b.wav")
+        #expect(model.unsavedResults.map(\.entry.fileName) == ["a.wav", "b.wav"])
+        #expect(model.errorMessage?.contains("“a.wav”") == true)
+
+        // Without editing, a newer recording doesn’t drop the one on screen either.
+        let c = entry("c.wav")
+        model.finishTranscription(c, record: TranscriptRecord(transcript: "Recording C.", cues: []))
+        #expect(model.unsavedResults.map(\.entry.fileName) == ["a.wav", "b.wav", "c.wav"])
+
+        // Once History is writable again, the next recording saves the kept ones too.
+        try FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path)
+        model.finishTranscription(entry("d.wav"), record: TranscriptRecord(transcript: "Recording D.", cues: []))
+        #expect(model.unsavedResults.isEmpty)
+        #expect(Set(history.entries.map(\.fileName)).isSuperset(of: ["a.wav", "b.wav", "c.wav", "d.wav"]))
     }
-    #endif
+
+    @Test func selectingAnotherEntryKeepsAnUnsavedRecording() async throws {
+        let other = entry("other.wav")
+        try history.save(other, TranscriptRecord(transcript: "Other transcript.", cues: []))
+        let model = model()
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(entry("unsaved.wav"), record: TranscriptRecord(transcript: "Only on screen.", cues: []))
+
+        await model.select(other.id)
+        #expect(model.transcript == "Other transcript.")
+        #expect(model.unsavedResults.map(\.entry.fileName) == ["unsaved.wav"])
+    }
+
+    /// A recording with no recognized speech isn’t saved, so it must not look like a saved, editable entry.
+    @Test func aRecordingWithNoSpeechIsShownUnselected() {
+        let model = model()
+        model.finishTranscription(entry("silent.wav"), record: TranscriptRecord(transcript: "  ", cues: []))
+        #expect(model.fileName == "silent.wav")
+        #expect(model.selection == nil)
+        #expect(!model.canEdit)
+        #expect(model.unsavedResults.isEmpty)
+        #expect(history.entries.isEmpty)
+    }
+
+    @Test func exportingUnsavedRecordingsWritesThemAndForgetsOnlyThose() throws {
+        let model = model()
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
+        defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
+        model.finishTranscription(entry("talk.wav"), record: TranscriptRecord(transcript: "First talk.", cues: []))
+        model.finishTranscription(entry("talk.wav"), record: TranscriptRecord(transcript: "Second talk.", cues: []))
+        let asked = model.unsavedResults
+        // A recording that arrives while the save panel is open wasn’t part of what was saved.
+        model.finishTranscription(entry("late.wav"), record: TranscriptRecord(transcript: "Late talk.", cues: []))
+        let folder = FileManager.default.temporaryDirectory.appending(path: UUID().uuidString)
+        try FileManager.default.createDirectory(at: folder, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: folder) }
+
+        let written = try model.exportUnsavedResults(asked, to: folder)
+        #expect(written.map(\.lastPathComponent) == ["talk.txt", "talk 2.txt"])
+        #expect(try String(contentsOf: written[0], encoding: .utf8) == "First talk.")
+        #expect(try String(contentsOf: written[1], encoding: .utf8) == "Second talk.")
+        #expect(model.unsavedResults.map(\.entry.fileName) == ["late.wav"])
+
+        model.discardUnsavedResults(model.unsavedResults)
+        #expect(model.unsavedResults.isEmpty)
+    }
 
     #if os(macOS)
-    /// Scenario 4: quitting must not silently discard a recording History couldn’t store.
-    @Test func quittingWithAnUnsavedRecordingOnScreenIsNotSilent() throws {
+    /// Scenario 4 and the alert collision: quitting asks through the injected prompt, not a SwiftUI alert
+    /// that another alert could hide, and asks again for a recording that arrived meanwhile.
+    @Test func quittingAsksAboutEveryUnsavedRecording() throws {
         let model = model()
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
-        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil)
+        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil) { _, _ in false }
         window.delegate = delegate
         defer { window.delegate = nil; window.close() }
         try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
         try FileManager.default.setAttributes([.posixPermissions: 0o555], ofItemAtPath: directory.path)
         defer { try? FileManager.default.setAttributes([.posixPermissions: 0o755], ofItemAtPath: directory.path) }
         model.finishTranscription(entry("unsaved.wav"), record: TranscriptRecord(transcript: "Only on screen.", cues: []))
-        try #require(model.transcript == "Only on screen.")
-        try #require(model.selection == nil)
+        // The failed save is reported by the ordinary error alert, which may still be open.
+        try #require(model.errorMessage != nil)
 
-        #expect(TranscriptApplicationDelegate().applicationShouldTerminate(.shared) != .terminateNow)
+        var asked: [[String]] = []
+        let cancelling = TranscriptApplicationDelegate { model, _ in
+            asked.append(model.unsavedResults.map(\.entry.fileName))
+            return false
+        }
+        #expect(cancelling.applicationShouldTerminate(.shared) == .terminateCancel)
+        #expect(asked == [["unsaved.wav"]])
+
+        var answers = 0
+        let discarding = TranscriptApplicationDelegate { model, _ in
+            answers += 1
+            if answers == 1 {
+                let shown = model.unsavedResults
+                model.finishTranscription(self.entry("late.wav"), record: TranscriptRecord(transcript: "Late.", cues: []))
+                model.discardUnsavedResults(shown)
+            } else {
+                model.discardUnsavedResults(model.unsavedResults)
+            }
+            return true
+        }
+        #expect(discarding.applicationShouldTerminate(.shared) == .terminateNow)
+        #expect(answers == 2)
+        #expect(model.unsavedResults.isEmpty)
+    }
+
+    /// Closing a window, not only quitting, asks before an unsaved recording is lost, including one
+    /// that ending the edit has just put on screen.
+    @Test func closingAWindowAsksAboutUnsavedRecordings() async throws {
+        let first = entry("first.wav")
+        try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
+        let model = model()
+        await model.select(first.id)
+        var answer = false
+        var asked: [[String]] = []
+        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil) { model, _ in
+            asked.append(model.unsavedResults.map(\.entry.fileName))
+            if answer { model.discardUnsavedResults(model.unsavedResults) }
+            return answer
+        }
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        model.beginEditing()
+        model.updateDraft("Edited words.")
+        // The draft can’t be saved while the recording finishes, so the recording waits.
+        let backup = history.directory.appending(path: "\(first.id.uuidString).original.transcript.json")
+        try Data("invalid JSON".utf8).write(to: backup)
+        // History can’t store this one recording: a folder sits where its file would go.
+        let waiting = entry("waiting.wav")
+        let blocker = history.directory.appending(path: "\(waiting.id.uuidString).transcript.json")
+        try FileManager.default.createDirectory(at: blocker.appending(path: "keep"), withIntermediateDirectories: true)
+        model.finishTranscription(waiting, record: TranscriptRecord(transcript: "Waiting.", cues: []))
+        try #require(model.isEditing)
+
+        // Ending the edit fails here, so nothing closes or is asked yet.
+        #expect(!delegate.windowShouldClose(window))
+        #expect(asked.isEmpty)
+
+        // Once the draft saves, ending the edit puts the waiting recording on screen in the same call.
+        try FileManager.default.removeItem(at: backup)
+        model.keepEditing()
+        #expect(!delegate.windowShouldClose(window))
+        #expect(!model.isEditing)
+        #expect(model.fileName == "waiting.wav")
+        #expect(asked == [["waiting.wav"]])
+        answer = true
+        #expect(delegate.windowShouldClose(window))
+        #expect(model.unsavedResults.isEmpty)
+    }
+
+    @Test func quittingWithASilentRecordingOnScreenDoesNotAsk() {
+        let model = model()
+        let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
+                              backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil) { _, _ in false }
+        window.delegate = delegate
+        defer { window.delegate = nil; window.close() }
+        model.finishTranscription(entry("silent.wav"), record: TranscriptRecord(transcript: "", cues: []))
+        #expect(TranscriptApplicationDelegate { _, _ in false }.applicationShouldTerminate(.shared) == .terminateNow)
     }
     #endif
 
@@ -596,7 +736,7 @@ final class TranscriptionEditingSafetyTests {
         window.delegate = delegate
         defer { window.delegate = nil; window.close() }
         try #require(NSApplication.shared.windows.contains { $0 === window })
-        let applicationDelegate = TranscriptApplicationDelegate()
+        let applicationDelegate = TranscriptApplicationDelegate { _, _ in false }
 
         model.beginEditing()
         model.updateDraft("Words that must survive closing.")
@@ -630,7 +770,7 @@ final class TranscriptionEditingSafetyTests {
         let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil)
         window.delegate = delegate
         defer { window.delegate = nil; window.close() }
-        let applicationDelegate = TranscriptApplicationDelegate()
+        let applicationDelegate = TranscriptApplicationDelegate { _, _ in false }
 
         model.beginEditing()
         model.updateDraft("Words that can’t be saved.")

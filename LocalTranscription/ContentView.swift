@@ -150,18 +150,6 @@ struct ContentView: View {
         } message: {
             Text("“\(model.fileName)” was edited in another window after you started editing here. Keep your version to replace it, or use the other version and discard your edits.")
         }
-        #if os(macOS)
-        .alert("Quit Without Saving?", isPresented: $model.isConfirmingQuit) {
-            Button("Save Transcript…") { export(.text) }
-            Button("Quit Anyway", role: .destructive) {
-                model.discardUnsavedResult()
-                NSApplication.shared.terminate(nil)
-            }
-            Button("Cancel", role: .cancel) {}
-        } message: {
-            Text("The transcript of “\(model.unsavedResultName ?? "")” couldn’t be saved to history and will be lost.")
-        }
-        #endif
         .alert("Language Not Supported", isPresented: Binding(
             get: { model.languageWarning != nil },
             set: { if !$0 { model.hideLanguageWarning() } }
@@ -492,15 +480,19 @@ struct TranscriptWindowCloseGuard: NSViewRepresentable {
 final class TranscriptWindowDelegate: NSObject, NSWindowDelegate {
     let model: TranscriptionModel
     weak var originalDelegate: (any NSWindowDelegate)?
+    private let confirmLosingUnsaved: UnsavedRecordingsPrompt.Confirm
 
-    init(model: TranscriptionModel, originalDelegate: (any NSWindowDelegate)?) {
+    init(model: TranscriptionModel, originalDelegate: (any NSWindowDelegate)?,
+         confirm: @escaping UnsavedRecordingsPrompt.Confirm = UnsavedRecordingsPrompt.confirm) {
         self.model = model
+        confirmLosingUnsaved = confirm
         self.originalDelegate = originalDelegate
     }
 
     @MainActor
     func windowShouldClose(_ sender: NSWindow) -> Bool {
-        guard model.endEditing() else { return false }
+        guard model.endEditing(),
+              UnsavedRecordingsPrompt.resolve(model, in: sender, confirm: confirmLosingUnsaved) else { return false }
         return originalDelegate?.windowShouldClose?(sender) ?? true
     }
 

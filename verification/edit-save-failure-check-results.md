@@ -33,4 +33,4 @@ Rebuilt the same isolated copy from the fix for failure scenarios 1, 2 and 4, op
 | A window saving several times in a row | **Passed.** Its own saves never asked. |
 | Keep My Version | **Passed.** That window’s text replaced the other on disk; Done then ended editing, and the other window showed the new text. |
 
-The Quit Without Saving? prompt was not checked in the app: it needs a real transcription that History can’t store. It is covered by the automated tests.
+The prompt that asks before closing or quitting loses a recording History couldn’t store was not checked in the app: it needs a real transcription that History can’t store. PR #6 replaced the earlier SwiftUI “Quit Without Saving?” alert with a native alert. Both are covered only by the automated tests.
