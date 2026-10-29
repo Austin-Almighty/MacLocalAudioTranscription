@@ -26,6 +26,38 @@ struct TranscriptRecord: Codable, Equatable, Sendable {
     let cues: [SubtitleCue]
 }
 
+/// The file operations History uses, so tests can fail one chosen write.
+protocol HistoryFiles: Sendable {
+    func createDirectory(at url: URL) throws
+    func contents(of directory: URL) throws -> [URL]
+    func exists(_ url: URL) -> Bool
+    func read(_ url: URL) throws -> Data
+    /// Replaces the file in one step, so a failed write leaves the previous file whole.
+    func write(_ data: Data, to url: URL) throws
+    func copy(_ url: URL, to destination: URL) throws
+    /// Moves `replacement` over `url`.
+    func replace(_ url: URL, with replacement: URL) throws
+    func remove(_ url: URL) throws
+}
+
+/// The files on disk.
+struct DiskFiles: HistoryFiles {
+    func createDirectory(at url: URL) throws {
+        try FileManager.default.createDirectory(at: url, withIntermediateDirectories: true)
+    }
+    func contents(of directory: URL) throws -> [URL] {
+        try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+    }
+    func exists(_ url: URL) -> Bool { FileManager.default.fileExists(atPath: url.path) }
+    func read(_ url: URL) throws -> Data { try Data(contentsOf: url) }
+    func write(_ data: Data, to url: URL) throws { try data.write(to: url, options: .atomic) }
+    func copy(_ url: URL, to destination: URL) throws { try FileManager.default.copyItem(at: url, to: destination) }
+    func replace(_ url: URL, with replacement: URL) throws {
+        _ = try FileManager.default.replaceItemAt(url, withItemAt: replacement)
+    }
+    func remove(_ url: URL) throws { try FileManager.default.removeItem(at: url) }
+}
+
 /// Saved transcriptions, shared by every window. Each entry is two JSON files named by its ID;
 /// no audio or original file location is kept.
 @MainActor
@@ -39,19 +71,21 @@ final class TranscriptHistory {
     /// Newest first.
     private(set) var entries: [HistoryEntry] = []
     @ObservationIgnored let directory: URL
+    @ObservationIgnored private let files: any HistoryFiles
     @ObservationIgnored private var loading: Task<Void, Never>?
 
-    init(directory: URL) {
+    init(directory: URL, files: any HistoryFiles = DiskFiles()) {
         self.directory = directory
+        self.files = files
     }
 
     /// Reads the saved entries once; later calls wait for the first.
     func load() async {
         if let loading { return await loading.value }
-        let directory = directory
+        let directory = directory, files = files
         let task = Task {
             let found = await Task.detached(priority: .userInitiated) {
-                Self.readEntries(in: directory)
+                Self.readEntries(in: directory, files: files)
             }.value
             // Keep anything saved while loading.
             let saved = Set(entries.map(\.id))
@@ -62,55 +96,77 @@ final class TranscriptHistory {
     }
 
     func save(_ entry: HistoryEntry, _ record: TranscriptRecord) throws {
-        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try files.createDirectory(at: directory)
         let encoder = JSONEncoder()
         // Write the transcript first, so a summary never points at a missing transcript, and
         // remove it again if the summary fails, so no transcript is left that the list can’t show.
-        try encoder.encode(record).write(to: recordURL(entry.id), options: .atomic)
+        try files.write(encoder.encode(record), to: recordURL(entry.id))
         do {
-            try encoder.encode(entry).write(to: entryURL(entry.id), options: .atomic)
+            try files.write(encoder.encode(entry), to: entryURL(entry.id))
         } catch {
-            try? FileManager.default.removeItem(at: recordURL(entry.id))
+            do {
+                try files.remove(recordURL(entry.id))
+            } catch let cleanup {
+                Self.logger.error("Couldn’t remove the transcript of a failed save: \(cleanup.localizedDescription, privacy: .public)")
+            }
             throw error
         }
         entries.insert(entry, at: entries.firstIndex { $0.date <= entry.date } ?? entries.endIndex)
     }
 
     func record(for id: UUID) async throws -> TranscriptRecord {
-        let url = recordURL(id)
+        let url = recordURL(id), files = files
         return try await Task.detached(priority: .userInitiated) {
-            try JSONDecoder().decode(TranscriptRecord.self, from: Data(contentsOf: url))
+            try JSONDecoder().decode(TranscriptRecord.self, from: files.read(url))
         }.value
     }
 
     /// Keeps the original cue timings available even after edits remove every word of a cue.
     func originalRecord(for id: UUID) throws -> TranscriptRecord {
         let original = originalURL(id)
-        let url = FileManager.default.fileExists(atPath: original.path) ? original : recordURL(id)
-        return try JSONDecoder().decode(TranscriptRecord.self, from: Data(contentsOf: url))
+        let url = files.exists(original) ? original : recordURL(id)
+        return try JSONDecoder().decode(TranscriptRecord.self, from: files.read(url))
     }
 
     /// Saves an edited transcript. The first edit keeps a copy of the transcript as transcribed,
     /// so it can be restored.
     func update(_ id: UUID, _ record: TranscriptRecord, editedAt date: Date) throws {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { throw CocoaError(.fileNoSuchFile) }
-        if !FileManager.default.fileExists(atPath: originalURL(id).path) {
-            try FileManager.default.copyItem(at: recordURL(id), to: originalURL(id))
+        let previous = try files.read(recordURL(id))
+        let keepsNewOriginal = !files.exists(originalURL(id))
+        if keepsNewOriginal {
+            try files.copy(recordURL(id), to: originalURL(id))
         }
-        try JSONEncoder().encode(record).write(to: recordURL(id), options: .atomic)
         var entry = entries[index]
         entry.edited = date
-        try JSONEncoder().encode(entry).write(to: entryURL(id), options: .atomic)
+        do {
+            try files.write(JSONEncoder().encode(record), to: recordURL(id))
+            try files.write(JSONEncoder().encode(entry), to: entryURL(id))
+        } catch {
+            // Put back the transcript the summary still describes, so every window agrees on it.
+            restore(previous, of: id, removingOriginal: keepsNewOriginal)
+            throw error
+        }
         entries[index] = entry
+    }
+
+    /// Undoes a failed update; a failure here is logged, since the caller reports the first one.
+    private func restore(_ previous: Data, of id: UUID, removingOriginal: Bool) {
+        do {
+            try files.write(previous, to: recordURL(id))
+            if removingOriginal { try files.remove(originalURL(id)) }
+        } catch {
+            Self.logger.error("Couldn’t restore the transcript after a failed edit: \(error.localizedDescription, privacy: .public)")
+        }
     }
 
     /// Restores the transcript as transcribed and returns it.
     func revert(_ id: UUID) async throws -> TranscriptRecord {
         guard let index = entries.firstIndex(where: { $0.id == id }) else { throw CocoaError(.fileNoSuchFile) }
-        _ = try FileManager.default.replaceItemAt(recordURL(id), withItemAt: originalURL(id))
+        try files.replace(recordURL(id), with: originalURL(id))
         var entry = entries[index]
         entry.edited = nil
-        try JSONEncoder().encode(entry).write(to: entryURL(id), options: .atomic)
+        try files.write(JSONEncoder().encode(entry), to: entryURL(id))
         entries[index] = entry
         return try await record(for: id)
     }
@@ -118,8 +174,8 @@ final class TranscriptHistory {
     func delete(_ id: UUID) throws {
         // Remove the transcripts before the summary: if a later removal fails, the entry stays
         // listed and can be deleted again, rather than leaving transcript text the list can’t show.
-        for url in [recordURL(id), originalURL(id), entryURL(id)] where FileManager.default.fileExists(atPath: url.path) {
-            try FileManager.default.removeItem(at: url)
+        for url in [recordURL(id), originalURL(id), entryURL(id)] where files.exists(url) {
+            try files.remove(url)
         }
         entries.removeAll { $0.id == id }
     }
@@ -127,21 +183,21 @@ final class TranscriptHistory {
     /// Removes every saved transcript file in the folder, including entries that couldn’t be
     /// listed, so nothing remains after the person clears history.
     func deleteAll() throws {
-        let files: [URL]
+        let found: [URL]
         do {
-            files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            found = try files.contents(of: directory)
         } catch CocoaError.fileReadNoSuchFile {
-            files = []
+            found = []
         }
         var firstFailure: (any Error)?
-        for file in files where file.pathExtension == "json" {
+        for file in found where file.pathExtension == "json" {
             do {
-                try FileManager.default.removeItem(at: file)
+                try files.remove(file)
             } catch {
                 firstFailure = firstFailure ?? error
             }
         }
-        let remaining = Set((try? FileManager.default.contentsOfDirectory(atPath: directory.path)) ?? [])
+        let remaining = Set(((try? files.contents(of: directory)) ?? []).map(\.lastPathComponent))
         entries.removeAll { !remaining.contains("\($0.id.uuidString).json") }
         if let firstFailure { throw firstFailure }
     }
@@ -153,10 +209,10 @@ final class TranscriptHistory {
 
     /// Unreadable entries are skipped and logged, not deleted, so a newer format or a damaged
     /// file can still be recovered by hand. Only Clear History removes them.
-    nonisolated private static func readEntries(in directory: URL) -> [HistoryEntry] {
-        let files: [URL]
+    nonisolated private static func readEntries(in directory: URL, files: any HistoryFiles) -> [HistoryEntry] {
+        let found: [URL]
         do {
-            files = try FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)
+            found = try files.contents(of: directory)
         } catch CocoaError.fileReadNoSuchFile {
             return []
         } catch {
@@ -164,10 +220,10 @@ final class TranscriptHistory {
             return []
         }
         let decoder = JSONDecoder()
-        return files.filter { $0.pathExtension == "json" && !$0.lastPathComponent.hasSuffix(".transcript.json") }
+        return found.filter { $0.pathExtension == "json" && !$0.lastPathComponent.hasSuffix(".transcript.json") }
             .compactMap { url in
                 do {
-                    let entry = try decoder.decode(HistoryEntry.self, from: Data(contentsOf: url))
+                    let entry = try decoder.decode(HistoryEntry.self, from: files.read(url))
                     guard entry.version <= HistoryEntry.currentVersion else {
                         logger.error("Skipped history entry \(url.lastPathComponent, privacy: .public) from a newer version")
                         return nil
