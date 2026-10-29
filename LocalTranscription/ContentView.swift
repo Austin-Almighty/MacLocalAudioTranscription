@@ -10,6 +10,8 @@ struct ContentView: View {
     @State private var isExporting = false
     @State private var exportFormat = TranscriptFormat.text
     @State private var exportDocument = TranscriptDocument(text: "")
+    /// The unsaved recording being exported, captured when the save panel opens.
+    @State private var exportingUnsavedID: UUID?
     @AppStorage("showTimestamps") private var showTimestamps = false
     @Environment(\.scenePhase) private var scenePhase
     // On iPhone the list is shown first; an import switches to the transcript so its progress shows.
@@ -121,7 +123,14 @@ struct ContentView: View {
                       document: exportDocument,
                       contentType: exportFormat.contentType,
                       defaultFilename: (model.fileName as NSString).deletingPathExtension + "." + exportFormat.fileExtension) { result in
-            if case .failure(let error) = result { model.errorMessage = error.localizedDescription }
+            switch result {
+            case .success:
+                // Its words are kept in the exported file, so closing and quitting needn’t ask about it.
+                model.forgetExportedRecording(exportingUnsavedID)
+            case .failure(let error):
+                model.errorMessage = error.localizedDescription
+            }
+            exportingUnsavedID = nil
         }
         .alert("Local Transcription", isPresented: Binding(
             get: { model.errorMessage != nil },
@@ -186,6 +195,7 @@ struct ContentView: View {
         // Render once here; rendering in body would re-format long subtitles on every progress update.
         guard model.saveDraft() else { return }
         exportFormat = format
+        exportingUnsavedID = model.shownUnsavedID
         exportDocument = TranscriptDocument(text: format.render(transcript: model.transcript, cues: model.cues))
         isExporting = true
     }
@@ -355,8 +365,10 @@ struct ContentView: View {
                 }
                 if let edited = model.editedDate {
                     LabeledContent("Edited", value: edited.formatted(date: .abbreviated, time: .shortened))
-                    Button("Revert to Original…") { isConfirmingRevert = true }
-                        .disabled(model.isLoadingSelection)
+                    if model.canRevert {
+                        Button("Revert to Original…") { isConfirmingRevert = true }
+                            .disabled(model.isLoadingSelection)
+                    }
                 }
                 if let time = model.processingTime {
                     LabeledContent("Processing", value: DisplayFormat.processingTime(time))
