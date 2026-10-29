@@ -155,8 +155,11 @@ final class TranscriptHistory {
             wroteRecord = true
             try files.write(JSONEncoder().encode(entry), to: entryURL(id))
         } catch {
-            // Put back the transcript the summary still describes, so every window agrees on it.
-            restore(wroteRecord ? previous : nil, of: id, removingOriginal: keepsNewOriginal)
+            // Put back the transcript the summary still describes, so every window agrees on it. A new
+            // original copy goes only if the transcript wasn’t overwritten or is put back; otherwise it
+            // is the last copy of the words as transcribed.
+            restore(wroteRecord ? previous : nil, of: id,
+                    removingOriginal: keepsNewOriginal && (!wroteRecord || previous != nil))
             throw error
         }
         entries[index] = entry

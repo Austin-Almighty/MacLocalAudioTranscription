@@ -216,6 +216,26 @@ final class TranscriptHistoryTests {
         #expect(history.entries.first?.edited == Date(timeIntervalSince1970: 2_000))
     }
 
+    /// On a first edit the new original copy is the only as-transcribed text left once the transcript
+    /// is overwritten, so a failed edit that can’t restore the transcript must keep it.
+    @Test func aFailedFirstEditOfAnUnreadableTranscriptKeepsTheOriginalCopy() async throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let saved = entry("saved.wav", at: 1_000)
+        try history.save(saved, unicodeRecord)
+
+        files.failReads(of: "\(saved.id.uuidString).transcript.json")
+        files.failWrites(to: "\(saved.id.uuidString).json")
+        let edit = TranscriptRecord(transcript: "Edit.", cues: [])
+        #expect(throws: FailingFiles.WriteFailed.self) {
+            try history.update(saved.id, edit, editedAt: .now)
+        }
+        files.failReads(of: nil)
+        #expect(try history.originalRecord(for: saved.id) == unicodeRecord)
+        #expect(history.hasOriginal(saved.id))
+        #expect(try await history.record(for: saved.id) == edit)
+    }
+
     @Test func startsEmptyBeforeAnythingIsSaved() async throws {
         await history.load()
         #expect(history.entries.isEmpty)
