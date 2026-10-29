@@ -355,8 +355,10 @@ struct ContentView: View {
                 }
                 if let edited = model.editedDate {
                     LabeledContent("Edited", value: edited.formatted(date: .abbreviated, time: .shortened))
-                    Button("Revert to Original…") { isConfirmingRevert = true }
-                        .disabled(model.isLoadingSelection)
+                    if model.canRevert {
+                        Button("Revert to Original…") { isConfirmingRevert = true }
+                            .disabled(model.isLoadingSelection)
+                    }
                 }
                 if let time = model.processingTime {
                     LabeledContent("Processing", value: DisplayFormat.processingTime(time))

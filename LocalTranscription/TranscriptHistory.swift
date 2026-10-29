@@ -128,6 +128,9 @@ final class TranscriptHistory {
         return try JSONDecoder().decode(TranscriptRecord.self, from: files.read(url))
     }
 
+    /// Whether the transcript as transcribed is still kept, so Revert can restore it.
+    func hasOriginal(_ id: UUID) -> Bool { files.exists(originalURL(id)) }
+
     /// Saves an edited transcript. The first edit keeps a copy of the transcript as transcribed,
     /// so it can be restored.
     func update(_ id: UUID, _ record: TranscriptRecord, editedAt date: Date) throws {

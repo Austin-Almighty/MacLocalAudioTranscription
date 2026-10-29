@@ -454,6 +454,9 @@ final class TranscriptionModel {
     var isEditing: Bool { draft != nil }
     /// Only saved transcripts can be edited, because edits are saved to history.
     var canEdit: Bool { selection != nil && !isLoadingSelection }
+    /// Whether Revert to Original is offered: only for an edited transcript whose original copy
+    /// still exists, since it may have been deleted by hand or by a sync tool.
+    var canRevert: Bool { editedDate != nil && selection.map(history.hasOriginal) == true }
 
     func beginEditing() {
         guard canEdit, let selection, draft == nil else { return }
