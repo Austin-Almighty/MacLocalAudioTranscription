@@ -149,25 +149,25 @@ final class TranscriptHistory {
         }
         var entry = entries[index]
         entry.edited = date
+        var wroteRecord = false
         do {
             try files.write(JSONEncoder().encode(record), to: recordURL(id))
+            wroteRecord = true
             try files.write(JSONEncoder().encode(entry), to: entryURL(id))
         } catch {
             // Put back the transcript the summary still describes, so every window agrees on it.
-            restore(previous, of: id, removingOriginal: keepsNewOriginal)
+            restore(wroteRecord ? previous : nil, of: id, removingOriginal: keepsNewOriginal)
             throw error
         }
         entries[index] = entry
     }
 
     /// Undoes a failed update; a failure here is logged, since the caller reports the first one.
+    /// Without previous data the transcript stays as it is: either it wasn’t overwritten, or the old
+    /// one couldn’t be read, and keeping the new words beats leaving the entry with none.
     private func restore(_ previous: Data?, of id: UUID, removingOriginal: Bool) {
         do {
-            if let previous {
-                try files.write(previous, to: recordURL(id))
-            } else if files.exists(recordURL(id)) {
-                try files.remove(recordURL(id))
-            }
+            if let previous { try files.write(previous, to: recordURL(id)) }
             if removingOriginal { try files.remove(originalURL(id)) }
         } catch {
             Self.logger.error("Couldn’t restore the transcript after a failed edit: \(error.localizedDescription, privacy: .public)")
