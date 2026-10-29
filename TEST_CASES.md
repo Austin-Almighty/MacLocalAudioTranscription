@@ -44,6 +44,7 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | History | Save entries with a Unicode file name, cues, and with and without a language, then reopen the store | A new session lists them newest first and reloads each transcript and cue exactly. |
 | History | Delete one entry, then clear history | Both files of a deleted entry are removed; clearing leaves no saved transcripts. |
 | History | Clear history when only damaged, newer-format, and orphaned transcript files remain; clear an absent folder twice; save when the summary can’t be written | Clearing remains available with an empty list, removes hidden transcript files, and is safe to repeat; a failed save leaves no transcript file behind. |
+| History | Edit a saved entry when only the summary file can’t be written, on the first edit and on a later one (a test double fails that one write) | The edit reports an error; the previous transcript, edited date and original copy are kept as they were, and a first edit leaves no original copy behind. |
 | History | Transcribe three seconds of silence | Nothing is recognized and nothing is saved. |
 | Vocabulary | Parse terms with commas, line breaks, extra spaces, repeats, different case, and Unicode | Keep phrases and case, drop blanks and exact repeats. |
 | Vocabulary | Change the terms after queuing a file | The queued file keeps the terms entered when it was added. |
@@ -64,6 +65,7 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Editing | Try to edit with no saved transcript | Editing doesn’t start. |
 | Editing | Delete all text or a whole cue, save, then restore the text; repeat after reopening an empty saved transcript | Restored words recover their original cue timings. An unreadable original is reported rather than silently replaced. |
 | Editing | Select another entry and try to edit while its record loads | Editing cannot attach the previous transcript’s text to the new entry. |
+| Editing | Delete an edited entry’s original copy by hand, then revert | Revert to Original is no longer offered; reverting anyway reports that the original couldn’t be restored and keeps the edit on screen and on disk. |
 | Editing | Attempt Edit during Revert, fail a restore, or select another entry while restoring | Revert blocks stale drafts, releases its loading guard after failure, and cannot replace a newer selection. |
 | Editing | Make History unwritable, edit, then choose Done, switch entries, revert, or request a Mac window close or quit; restore write access and retry | The failed save keeps the draft and current entry intact, and close or quit is refused; retry saves the retained edit. |
 | Editing | A draft can’t be saved; discard it, then switch entries, close the window, or quit | Discard Edits leaves editing with the saved transcript unchanged, and switching, closing, and quitting work again. |

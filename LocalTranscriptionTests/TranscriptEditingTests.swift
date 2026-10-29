@@ -233,6 +233,24 @@ final class TranscriptEditingTests {
         #expect(model.editedDate == nil)
     }
 
+    @Test func revertingWithoutTheOriginalReportsItAndKeepsTheEdit() async throws {
+        let model = try await editedModel()
+        model.beginEditing()
+        model.updateDraft("Edited words.")
+        #expect(model.endEditing())
+        #expect(model.canRevert)
+        // The original copy is deleted by hand or by a sync tool.
+        try FileManager.default.removeItem(at: directory.appending(path: "\(entry.id.uuidString).original.transcript.json"))
+        #expect(!model.canRevert)
+
+        await model.revertToOriginal()
+        #expect(model.errorMessage?.contains("original transcript couldn’t be restored") == true)
+        #expect(model.transcript == "Edited words.")
+        #expect(model.editedDate != nil)
+        #expect(try await history.record(for: entry.id).transcript == "Edited words.")
+        #expect(history.entries.first?.edited != nil)
+    }
+
     @Test func anotherWindowShowsTheEditedVersion() async throws {
         let editor = try await editedModel()
         let viewer = TranscriptionModel(recognizers: RecognizerStore(), languages: FakeLanguageIdentifier(), history: history)
