@@ -63,12 +63,13 @@ Four phases, each a separate PR. Every fix starts as a failing test, as in PR #2
 1. **Confirm.** Write tests only, no fixes, for 1, 2, 4, 7, 11, 13 and 15, and run the manual check for 3. Result: a list of which scenarios are real.
    - [x] Unit tests for 1, 2 and 4 (PR #4)
    - [ ] Unit tests for 13 and 15
+     - [x] 13: the error is clear and the edit stays intact already; Revert to Original is now hidden when the original copy is missing
    - [ ] Randomised tests for 7 and 11
    - [x] Manual check for 3 in the isolated app: not reproduced; the language warning wasn’t tried
 2. **Fix data loss.** Fix whatever phase 1 confirmed among 1, 2 and 4; add the file-operation seam, then test and fix 5.
    - [x] Fixes for 1, 2 and 4 (PR #5, with gaps fixed in PR #6)
-   - [ ] File-operation seam in History
-   - [ ] Test and fix for 5
+   - [x] File-operation seam in History (`HistoryFiles`, with a test double that fails one chosen write)
+   - [x] Test and fix for 5: confirmed (the new transcript stayed after the summary failed); `update` now restores it
 3. **Speaker quality.** Fix 7 and 11, settle the expected behavior for 8, and measure 9 and 10.
    - [ ] Nearest-turn fallback (7) and sorting (11)
    - [ ] Decision and tests for 8
@@ -87,4 +88,4 @@ PR #2 covered these, so they are not repeated here:
 - A failed save offers Discard Edits and Keep Editing; switching, Revert, Copy, Export, closing and quitting no longer trap the window. Covered by model tests and the UI-23 check in the app (`verification/edit-save-failure-check-results.md`).
 - Repeated autosave failures are reported once.
 - A recording that can’t be saved while a draft can’t be saved waits and appears when editing ends. Covered by model tests only, not in the app.
-- The full macOS suite passed with 118 tests after PR #2, and passes with 130 after PR #6. The 17 real-model tests are skipped because the models aren’t cached on the test machine.
+- The full macOS suite passed with 118 tests after PR #2, passes with 130 after PR #6, and with 133 after the History file-safety fixes. The 17 real-model tests are skipped because the models aren’t cached on the test machine.

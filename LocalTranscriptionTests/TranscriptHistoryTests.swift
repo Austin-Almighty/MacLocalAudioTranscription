@@ -1,4 +1,5 @@
 import Foundation
+import Synchronization
 import Testing
 @testable import LocalTranscription
 
@@ -9,6 +10,33 @@ extension TranscriptHistory {
         TranscriptHistory(directory: FileManager.default.temporaryDirectory
             .appending(path: "LocalTranscriptionTests-\(UUID().uuidString)", directoryHint: .isDirectory))
     }
+}
+
+/// Files on disk, except that writes to one chosen file name fail once it is set.
+final class FailingFiles: HistoryFiles {
+    struct WriteFailed: Error {}
+    struct ReadFailed: Error {}
+    private let disk = DiskFiles()
+    private let failing = Mutex<String?>(nil)
+    private let failingRead = Mutex<String?>(nil)
+
+    func failWrites(to name: String?) { failing.withLock { $0 = name } }
+    func failReads(of name: String?) { failingRead.withLock { $0 = name } }
+
+    func createDirectory(at url: URL) throws { try disk.createDirectory(at: url) }
+    func contents(of directory: URL) throws -> [URL] { try disk.contents(of: directory) }
+    func exists(_ url: URL) -> Bool { disk.exists(url) }
+    func read(_ url: URL) throws -> Data {
+        if failingRead.withLock({ $0 == url.lastPathComponent }) { throw ReadFailed() }
+        return try disk.read(url)
+    }
+    func write(_ data: Data, to url: URL) throws {
+        if failing.withLock({ $0 == url.lastPathComponent }) { throw WriteFailed() }
+        try disk.write(data, to: url)
+    }
+    func copy(_ url: URL, to destination: URL) throws { try disk.copy(url, to: destination) }
+    func replace(_ url: URL, with replacement: URL) throws { try disk.replace(url, with: replacement) }
+    func remove(_ url: URL) throws { try disk.remove(url) }
 }
 
 private func entry(_ name: String, at seconds: TimeInterval, language: DetectedLanguage? = nil) -> HistoryEntry {
@@ -119,6 +147,93 @@ final class TranscriptHistoryTests {
         #expect(throws: (any Error).self) { try self.history.save(blocked, unicodeRecord) }
         #expect(history.entries.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(blocked.id.uuidString).transcript.json").path))
+    }
+
+    @Test func aFailedEditSummaryRestoresThePreviousTranscript() async throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let saved = entry("saved.wav", at: 1_000)
+        try history.save(saved, unicodeRecord)
+        let firstEdit = TranscriptRecord(transcript: "First edit.", cues: [])
+        try history.update(saved.id, firstEdit, editedAt: Date(timeIntervalSince1970: 2_000))
+
+        // Only the summary fails, so the new transcript is written but other windows wouldn’t see the edit.
+        files.failWrites(to: "\(saved.id.uuidString).json")
+        #expect(throws: FailingFiles.WriteFailed.self) {
+            try history.update(saved.id, TranscriptRecord(transcript: "Second edit.", cues: []),
+                               editedAt: Date(timeIntervalSince1970: 3_000))
+        }
+        #expect(try await history.record(for: saved.id) == firstEdit)
+        #expect(history.entries.first?.edited == Date(timeIntervalSince1970: 2_000))
+        #expect(try history.originalRecord(for: saved.id) == unicodeRecord)
+    }
+
+    @Test func aFailedFirstEditLeavesTheEntryAsTranscribed() async throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let saved = entry("saved.wav", at: 1_000)
+        try history.save(saved, unicodeRecord)
+
+        files.failWrites(to: "\(saved.id.uuidString).json")
+        #expect(throws: FailingFiles.WriteFailed.self) {
+            try history.update(saved.id, TranscriptRecord(transcript: "Edit.", cues: []), editedAt: .now)
+        }
+        #expect(try await history.record(for: saved.id) == unicodeRecord)
+        #expect(history.entries.first?.edited == nil)
+        #expect(try jsonFiles() == ["\(saved.id.uuidString).json", "\(saved.id.uuidString).transcript.json"].sorted())
+    }
+
+    /// An unreadable transcript can’t be put back, so a failed edit must leave it alone rather than remove it.
+    @Test func aFailedEditOfAnUnreadableTranscriptKeepsItsFile() async throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let saved = entry("saved.wav", at: 1_000)
+        try history.save(saved, unicodeRecord)
+        let firstEdit = TranscriptRecord(transcript: "First edit.", cues: [])
+        try history.update(saved.id, firstEdit, editedAt: Date(timeIntervalSince1970: 2_000))
+        let transcript = "\(saved.id.uuidString).transcript.json"
+
+        // The transcript write itself fails, so the file on disk is untouched.
+        files.failReads(of: transcript)
+        files.failWrites(to: transcript)
+        #expect(throws: FailingFiles.WriteFailed.self) {
+            try history.update(saved.id, TranscriptRecord(transcript: "Second edit.", cues: []),
+                               editedAt: Date(timeIntervalSince1970: 3_000))
+        }
+        files.failReads(of: nil)
+        files.failWrites(to: nil)
+        #expect(try await history.record(for: saved.id) == firstEdit)
+
+        // Only the summary fails: the new words are kept, since the old ones can’t be restored.
+        files.failReads(of: transcript)
+        files.failWrites(to: "\(saved.id.uuidString).json")
+        let thirdEdit = TranscriptRecord(transcript: "Third edit.", cues: [])
+        #expect(throws: FailingFiles.WriteFailed.self) {
+            try history.update(saved.id, thirdEdit, editedAt: Date(timeIntervalSince1970: 4_000))
+        }
+        files.failReads(of: nil)
+        #expect(try await history.record(for: saved.id) == thirdEdit)
+        #expect(history.entries.first?.edited == Date(timeIntervalSince1970: 2_000))
+    }
+
+    /// On a first edit the new original copy is the only as-transcribed text left once the transcript
+    /// is overwritten, so a failed edit that can’t restore the transcript must keep it.
+    @Test func aFailedFirstEditOfAnUnreadableTranscriptKeepsTheOriginalCopy() async throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let saved = entry("saved.wav", at: 1_000)
+        try history.save(saved, unicodeRecord)
+
+        files.failReads(of: "\(saved.id.uuidString).transcript.json")
+        files.failWrites(to: "\(saved.id.uuidString).json")
+        let edit = TranscriptRecord(transcript: "Edit.", cues: [])
+        #expect(throws: FailingFiles.WriteFailed.self) {
+            try history.update(saved.id, edit, editedAt: .now)
+        }
+        files.failReads(of: nil)
+        #expect(try history.originalRecord(for: saved.id) == unicodeRecord)
+        #expect(history.hasOriginal(saved.id))
+        #expect(try await history.record(for: saved.id) == edit)
     }
 
     @Test func startsEmptyBeforeAnythingIsSaved() async throws {
