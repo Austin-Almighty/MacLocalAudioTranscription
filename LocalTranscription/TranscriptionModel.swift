@@ -35,6 +35,8 @@ final class TranscriptionModel {
     private(set) var editedDate: Date?
     /// The text being edited, or nil when not editing.
     private(set) var draft: String?
+    /// Why the draft couldn’t be saved, while the person chooses to discard it or keep editing.
+    private(set) var editSaveError: String?
     private(set) var isLoadingSelection = false
     /// Changes whenever the shown transcript’s text does, so views can reset cheaply instead of
     /// comparing the whole transcript.
@@ -58,6 +60,10 @@ final class TranscriptionModel {
     // The entry being edited, kept apart from `selection`, which a finishing transcription moves.
     @ObservationIgnored private var editingID: UUID?
     @ObservationIgnored private var autosave: Task<Void, Never>?
+    // Autosave stays quiet after a failure was reported, so a persistent failure doesn’t nag while typing.
+    @ObservationIgnored private var reportedSaveFailure = false
+    /// A finished recording that couldn’t be saved, shown once editing ends so it isn’t lost.
+    @ObservationIgnored private var waitingResult: (entry: HistoryEntry, record: TranscriptRecord, error: String)?
     private var queue: [QueuedFile] = []
     @ObservationIgnored let history: TranscriptHistory
 
@@ -259,28 +265,47 @@ final class TranscriptionModel {
     }
 
     /// Keeps a completed recording in history even when an unsaved draft must stay on screen.
+    /// A recording that can’t be saved either waits on screen until editing ends.
     func finishTranscription(_ entry: HistoryEntry, record: TranscriptRecord) {
         let mayReplace = endEditing()
-        var saved = false
+        var saveError: String?
         if !record.transcript.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             do {
                 try history.save(entry, record)
-                saved = true
             } catch {
                 Self.historyLogger.error("Couldn’t save transcript: \(error.localizedDescription, privacy: .public)")
-                appendError("The transcript of “\(entry.fileName)” couldn’t be saved to history. \(error.localizedDescription)")
+                saveError = "The transcript of “\(entry.fileName)” couldn’t be saved to history. \(error.localizedDescription)"
             }
         }
-        guard mayReplace else { return }
+        guard mayReplace else {
+            if let saveError { waitingResult = (entry, record, saveError) }
+            return
+        }
+        showResult(entry, record, error: saveError)
+    }
+
+    /// Shows a finished recording; one that failed to save is shown unselected, so it can’t be edited.
+    private func showResult(_ entry: HistoryEntry, _ record: TranscriptRecord, error: String?) {
         selectionLoad += 1
         show(entry, record)
-        if !saved { selection = nil }
+        guard let error else { return }
+        selection = nil
+        appendError(error)
+    }
+
+    private func showWaitingResult() {
+        guard let waiting = waitingResult else { return }
+        waitingResult = nil
+        showResult(waiting.entry, waiting.record, error: waiting.error)
     }
 
     /// Shows a saved transcript, or the empty view for nil. Ignored while busy, because the
     /// running transcription will replace whatever is shown when it finishes.
     func select(_ id: UUID?) async {
+        let hadWaitingResult = waitingResult != nil
         guard endEditing(), !isBusy else { return }
+        // Leave an unsaved recording that just appeared on screen, rather than replacing it unseen.
+        guard !hadWaitingResult else { return }
         selectionLoad += 1
         let current = selectionLoad
         guard let id, let entry = history.entries.first(where: { $0.id == id }) else {
@@ -327,9 +352,7 @@ final class TranscriptionModel {
     func reconcileWithHistory() {
         if let editingID, !history.entries.contains(where: { $0.id == editingID }) {
             // The entry being edited was deleted, so its draft has nowhere to go.
-            autosave?.cancel()
-            draft = nil
-            self.editingID = nil
+            stopEditing()
         }
         guard let selection else { return }
         guard let entry = history.entries.first(where: { $0.id == selection }) else {
@@ -377,13 +400,22 @@ final class TranscriptionModel {
             } catch {
                 return  // Cancelled by newer typing or an explicit save.
             }
-            self?.saveDraft()
+            self?.autosaveDraft()
         }
+    }
+
+    /// Saves the draft in the background, reporting only the first of repeated failures.
+    func autosaveDraft() {
+        saveDraft(reportingFailure: !reportedSaveFailure)
     }
 
     /// Saves the draft, keeping editing open. Subtitle cues keep their timings.
     @discardableResult
     func saveDraft() -> Bool {
+        saveDraft(reportingFailure: true)
+    }
+
+    private func saveDraft(reportingFailure: Bool) -> Bool {
         autosave?.cancel()
         guard let draft, let id = editingID, draft != transcript else { return true }
         let now = Date.now
@@ -396,10 +428,15 @@ final class TranscriptionModel {
             contentVersion += 1
             cues = edited
             editedDate = now
+            reportedSaveFailure = false
             return true
         } catch {
             Self.historyLogger.error("Couldn’t save edits: \(error.localizedDescription, privacy: .public)")
-            appendError("Your edits to “\(fileName)” couldn’t be saved. \(error.localizedDescription)")
+            if reportingFailure {
+                // Replaces, not appends, so retries don’t stack copies of the same message.
+                editSaveError = "Your edits to “\(fileName)” couldn’t be saved. \(error.localizedDescription)"
+                reportedSaveFailure = true
+            }
             return false
         }
     }
@@ -408,9 +445,27 @@ final class TranscriptionModel {
     @discardableResult
     func endEditing() -> Bool {
         guard saveDraft() else { return false }
+        stopEditing()
+        return true
+    }
+
+    /// Leaves editing without saving, for a draft that can’t be saved. The saved transcript stays.
+    func discardDraft() {
+        stopEditing()
+    }
+
+    /// Dismisses a failed-save report and keeps the draft open for another try.
+    func keepEditing() {
+        editSaveError = nil
+    }
+
+    private func stopEditing() {
+        autosave?.cancel()
         draft = nil
         editingID = nil
-        return true
+        editSaveError = nil
+        reportedSaveFailure = false
+        showWaitingResult()
     }
 
     /// Restores the shown transcript as it was transcribed.

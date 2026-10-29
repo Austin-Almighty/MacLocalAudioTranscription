@@ -48,6 +48,8 @@ final class TranscriptApplicationDelegate: NSObject, NSApplicationDelegate {
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         for window in sender.windows {
             if let delegate = window.delegate as? TranscriptWindowDelegate, !delegate.model.endEditing() {
+                // Bring forward the window asking to discard or keep its edits.
+                window.makeKeyAndOrderFront(nil)
                 return .terminateCancel
             }
         }
