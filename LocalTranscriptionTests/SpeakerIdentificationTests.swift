@@ -54,6 +54,17 @@ struct SpeakerAttributionTests {
         #expect(text == "Speaker 1: Hi um\n\nSpeaker 2: yes so right.")
     }
 
+    @Test func zeroLengthAndOverlappedWordsTakeTheClosestTurnStillUnderway() {
+        // An instant word inside a turn overlaps it by nothing, and a long earlier word can pull a later
+        // turn into the sweep before a short word that ends before it starts.
+        let instant = [Word(text: "yes", start: 0, end: 1), Word(text: "uh", start: 3, end: 3)]
+        #expect(SpeakerAttribution.speakers(for: instant, turns: [Turn(start: 0, end: 1.5, speaker: 0),
+                                                                  Turn(start: 2, end: 4, speaker: 1)]) == [0, 1])
+        let overlapped = [Word(text: "long", start: 0, end: 5), Word(text: "short", start: 1, end: 2)]
+        #expect(SpeakerAttribution.speakers(for: overlapped, turns: [Turn(start: 0, end: 0.5, speaker: 0),
+                                                                     Turn(start: 2.2, end: 4, speaker: 1)]) == [1, 1])
+    }
+
     @Test func discardsInvalidTurnsAndKeepsLongRecordingsInOrder() {
         let words = (0..<10_000).map { Word(text: "word", start: Double($0), end: Double($0) + 0.5) }
         let valid = (0..<10_000).map { Turn(start: Double($0), end: Double($0) + 0.8, speaker: $0 % 4) }
@@ -86,24 +97,26 @@ struct SpeakerAttributionTests {
         let byText = Dictionary(uniqueKeysWithValues: zip(words.map(\.text), speakers))
         #expect(sorted.map { byText[$0.text] ?? nil } == bySortedOrder, "seed \(seed): order changed the labels")
 
+        // A brute-force reference over every turn: the clear overlap, else the single closest voice within
+        // the window, else the previous word’s label.
         var previous: Int?
-        for (word, speaker) in zip(sorted, bySortedOrder) {
+        let expected = sorted.map { word -> Int? in
             var overlaps: [Int: Double] = [:]
             for turn in turns {
                 let overlap = min(word.end, turn.end) - max(word.start, turn.start)
                 if overlap > 0 { overlaps[turn.speaker, default: 0] += overlap }
             }
-            let longest = overlaps.values.max()
-            let winners = overlaps.filter { abs($0.value - (longest ?? 0)) < 0.000_001 }.keys
-            if winners.count == 1 {
-                #expect(speaker == winners.first, "seed \(seed): \(word.text) has a clear overlap")
-            } else {
-                let nearby = turns.filter { max($0.start - word.end, word.start - $0.end) <= SpeakerAttribution.window }
-                #expect(speaker == nil || speaker == previous || nearby.contains { $0.speaker == speaker },
-                        "seed \(seed): \(word.text) took a label from a distant turn")
-            }
-            previous = speaker
+            let longest = overlaps.values.max() ?? 0
+            let winners = Set(overlaps.filter { abs($0.value - longest) < 0.000_001 }.keys)
+            let distances = turns.map { (distance: max(0, $0.start - word.end, word.start - $0.end), speaker: $0.speaker) }
+                .filter { $0.distance <= SpeakerAttribution.window }
+            let closest = distances.map(\.distance).min() ?? 0
+            let nearest = Set(distances.filter { $0.distance - closest < 0.000_001 }.map(\.speaker))
+            let label = winners.count == 1 ? winners.first : overlaps.isEmpty && nearest.count == 1 ? nearest.first : previous
+            previous = label
+            return label
         }
+        #expect(bySortedOrder == expected, "seed \(seed)")
 
         // Every word reaches the cues in its original order, and each cue starts at its first word.
         let cues = Subtitles.cues(from: words, speakers: speakers)

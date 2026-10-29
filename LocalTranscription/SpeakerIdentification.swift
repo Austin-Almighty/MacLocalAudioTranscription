@@ -43,7 +43,8 @@ enum SpeakerAttribution {
             active.removeAll { $0.end <= word.start }
             ended.removeAll { word.start - $0.end > window }
 
-            let speaker = overlapping(word, active) ?? nearest(word, ended: ended, upcoming: turns[next...]) ?? previous
+            let speaker = overlapping(word, active)
+                ?? nearest(word, candidates: ended + active, upcoming: turns[next...]) ?? previous
             result[index] = speaker
             previous = speaker
         }
@@ -63,8 +64,10 @@ enum SpeakerAttribution {
     }
 
     /// The speaker of the closest turn within `window`, or nil when none is that close or two voices are equally close.
-    private static func nearest(_ word: Word, ended: [Turn], upcoming: ArraySlice<Turn>) -> Int? {
-        var nearby = ended.map { (distance: word.start - $0.end, speaker: $0.speaker) }
+    /// Turns already underway count too: an instant word inside one overlaps it by nothing.
+    private static func nearest(_ word: Word, candidates: [Turn], upcoming: ArraySlice<Turn>) -> Int? {
+        var nearby = candidates.map { (distance: max(0, $0.start - word.end, word.start - $0.end), speaker: $0.speaker) }
+            .filter { $0.distance <= window }
         for turn in upcoming {
             guard turn.start - word.end <= window else { break }
             nearby.append((turn.start - word.end, turn.speaker))
