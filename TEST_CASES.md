@@ -69,6 +69,9 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Editing | A draft can’t be saved; discard it, then switch entries, close the window, or quit | Discard Edits leaves editing with the saved transcript unchanged, and switching, closing, and quitting work again. |
 | Editing | Background autosave keeps failing while typing | The failure is reported once, without stacking messages; Done, switching, closing, or quitting report it again. |
 | Editing | A recording finishes while a draft can’t be saved, and History can’t store the recording either | The recording waits instead of being lost, and appears with a not-saved error once the draft is discarded or saved; switching entries shows it first rather than replacing it unseen. |
+| Editing | Two recordings finish while a draft and History can’t be saved | Neither is lost: when editing ends, saving is retried for both; the latest is shown, and any still unsaved is named. |
+| Editing | Two windows edit the same entry and both save | The later save asks first: Keep My Version replaces the other, Use Other Version discards the draft and shows the other, and Keep Editing waits. A window’s own saves never ask. |
+| Quitting | Quit with a recording on screen that History couldn’t store | Quitting asks first, offering Save Transcript…, Quit Anyway, and Cancel. |
 | Import queue | Sort the seven fixture formats, a text file, a folder, and a web address | The recordings are accepted in order; the rest are rejected. |
 | Import queue | Import only a text file | Name it in an error, queue nothing, and load no model. |
 | Import queue | Queue three recordings that sound like Chinese, add one while paused, cancel, clear the queue, cancel again | Each warning pauses the queue with the rest waiting; Cancel moves to the next; a file added while paused waits; Clear Queue leaves nothing to do. |

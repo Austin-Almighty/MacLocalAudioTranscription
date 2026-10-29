@@ -21,3 +21,16 @@ History was made unwritable (`chmod 555`) while alpha.wav was being edited.
 | After discarding, select beta.wav, close the window, and quit | **Passed.** Each worked while History was still unwritable. |
 
 A recording finishing while a draft can’t be saved (finding #2) was not repeated in the app. It needs a real transcription during the failure and is covered by the automated tests. Screenshots were not kept: the window capture picked the alert’s window and came out blank, so the accessibility tree is the record.
+
+## Two windows editing one entry — October 28, 2026
+
+Rebuilt the same isolated copy from the fix for failure scenarios 1, 2 and 4, opened a second window with File → New Window, and edited alpha.wav in both. Windows were addressed by screen position, because the accessibility window order changes as windows are used.
+
+| Step | Result |
+| --- | --- |
+| Left window saves, then the right window, which began editing from the older version, saves | **Passed.** The right window showed “Changed in Another Window” and History kept the left window’s text. |
+| Use Other Version | **Passed.** That window left editing and showed the other window’s text. |
+| A window saving several times in a row | **Passed.** Its own saves never asked. |
+| Keep My Version | **Passed.** That window’s text replaced the other on disk; Done then ended editing, and the other window showed the new text. |
+
+The Quit Without Saving? prompt was not checked in the app: it needs a real transcription that History can’t store. It is covered by the automated tests.
