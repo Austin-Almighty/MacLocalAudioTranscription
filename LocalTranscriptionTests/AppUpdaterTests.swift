@@ -5,11 +5,11 @@ import Testing
 
 struct AppUpdaterTests {
     private func response(tag: String = "v1.1.0", draft: Bool = false, prerelease: Bool = false,
-                          published: Bool = true, download: String? = nil) throws -> Data {
+                          published: Bool = true, state: String = "uploaded", download: String? = nil) throws -> Data {
         try JSONSerialization.data(withJSONObject: [
             "tag_name": tag, "draft": draft, "prerelease": prerelease,
             "published_at": published ? "2026-10-20T00:00:00Z" as Any : NSNull(),
-            "assets": [["name": AppRelease.assetName, "state": "uploaded",
+            "assets": [["name": AppRelease.assetName, "state": state,
                         "browser_download_url": download ?? "https://github.com/\(AppRelease.repository)/releases/download/\(tag)/\(AppRelease.assetName)"]]
         ])
     }
@@ -48,6 +48,13 @@ struct AppUpdaterTests {
         }
     }
 
+    @Test func rejectsADownloadThatIsStillUploading() throws {
+        let data = try response(state: "starter")
+        #expect(throws: UpdateError.self) {
+            try AppRelease.availableUpdate(data: data, statusCode: 200, installedVersion: "1.0")
+        }
+    }
+
     @Test func rejectsMissingAssetsAndMalformedResponses() throws {
         for json in ["{}", "not JSON", "{\"tag_name\":\"v1.1.0\",\"draft\":false,\"prerelease\":false,\"published_at\":\"2026-10-20\",\"assets\":[]}"] {
             #expect(throws: (any Error).self) {
@@ -56,11 +63,12 @@ struct AppUpdaterTests {
         }
     }
 
-    @Test(arguments: [404, 403, 429, 500])
-    func reportsHTTPFailures(status: Int) {
-        #expect(throws: UpdateError.self) {
+    @Test(arguments: [(404, UpdateError.noRelease), (403, .rateLimited), (429, .rateLimited), (500, .server(500))])
+    func reportsHTTPFailures(status: Int, expected: UpdateError) {
+        let error = #expect(throws: UpdateError.self) {
             try AppRelease.availableUpdate(data: Data(), statusCode: status, installedVersion: "1.0")
         }
+        #expect(error?.errorDescription == expected.errorDescription)
     }
 }
 #endif

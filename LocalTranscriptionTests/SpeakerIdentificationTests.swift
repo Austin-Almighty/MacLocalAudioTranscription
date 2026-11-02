@@ -65,6 +65,24 @@ struct SpeakerAttributionTests {
                                                                      Turn(start: 2.2, end: 4, speaker: 1)]) == [1, 1])
     }
 
+    @Test func wordsExactlyOneSecondFromATurnStillTakeItsSpeaker() {
+        // The window is inclusive, like subtitle cues, which split only at pauses longer than a second.
+        let words = [Word(text: "after", start: 2, end: 2.2), Word(text: "before", start: 3.8, end: 4)]
+        let turns = [Turn(start: 0, end: 1, speaker: 0), Turn(start: 5, end: 6, speaker: 1)]
+        #expect(SpeakerAttribution.speakers(for: words, turns: turns) == [0, 1])
+    }
+
+    @Test func aWordStartingAsATurnEndsTakesItsSpeaker() {
+        #expect(SpeakerAttribution.speakers(for: [Word(text: "after", start: 1, end: 1.2)],
+                                            turns: [Turn(start: 0, end: 1, speaker: 0)]) == [0])
+    }
+
+    @Test func acceptsTurnsInAnyOrder() {
+        let words = [Word(text: "first", start: 0, end: 0.4), Word(text: "second", start: 2, end: 2.4)]
+        let turns = [Turn(start: 2, end: 3, speaker: 1), Turn(start: 0, end: 1, speaker: 0)]
+        #expect(SpeakerAttribution.speakers(for: words, turns: turns) == [0, 1])
+    }
+
     @Test func discardsInvalidTurnsAndKeepsLongRecordingsInOrder() {
         let words = (0..<10_000).map { Word(text: "word", start: Double($0), end: Double($0) + 0.5) }
         let valid = (0..<10_000).map { Turn(start: Double($0), end: Double($0) + 0.8, speaker: $0 % 4) }

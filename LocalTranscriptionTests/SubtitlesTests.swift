@@ -20,6 +20,30 @@ struct SubtitlesTests {
         #expect(cues.map(\.text) == ["before", "after"])
     }
 
+    @Test func keepsAOneSecondPauseAndASixSecondCueTogether() {
+        // Only pauses longer than one second, or cues longer than six, split.
+        let paused = Subtitles.cues(from: words([("before", 0, 0.5), ("after", 1.5, 2.0)]))
+        #expect(paused.map(\.text) == ["before after"])
+        let full = Subtitles.cues(from: words([("one", 0, 0.5), ("two", 1, 1.5), ("three", 2, 2.5),
+                                               ("four", 3, 3.5), ("five", 4, 4.5), ("six", 5, 6)]))
+        #expect(full.map(\.text) == ["one two three four five six"])
+    }
+
+    @Test(arguments: [".", "?", "!", "…"])
+    func endsCuesAtEverySentenceMark(mark: String) {
+        let cues = Subtitles.cues(from: words([("Well\(mark)", 0, 0.5), ("okay", 0.6, 1.0)]))
+        #expect(cues.map(\.text) == ["Well\(mark)", "okay"])
+    }
+
+    @Test func fillsLinesUpToTheLimit() {
+        let oneLine = String(repeating: "a", count: 20) + " " + String(repeating: "b", count: 21)
+        #expect(oneLine.count == Subtitles.maxLineLength)
+        #expect(Subtitles.layout(oneLine) == oneLine)
+        let first = String(repeating: "a", count: Subtitles.maxLineLength)
+        let second = String(repeating: "b", count: Subtitles.maxLineLength)
+        #expect(Subtitles.layout(first + " " + second) == first + "\n" + second)
+    }
+
     @Test func limitsCueDuration() {
         let input = words((0..<30).map { ("word", Double($0) * 0.5, Double($0) * 0.5 + 0.4) })
         let cues = Subtitles.cues(from: input)

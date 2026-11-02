@@ -16,12 +16,15 @@ extension TranscriptHistory {
 final class FailingFiles: HistoryFiles {
     struct WriteFailed: Error {}
     struct ReadFailed: Error {}
+    struct RemoveFailed: Error {}
     private let disk = DiskFiles()
     private let failing = Mutex<String?>(nil)
     private let failingRead = Mutex<String?>(nil)
+    private let failingRemove = Mutex<String?>(nil)
 
     func failWrites(to name: String?) { failing.withLock { $0 = name } }
     func failReads(of name: String?) { failingRead.withLock { $0 = name } }
+    func failRemovals(of name: String?) { failingRemove.withLock { $0 = name } }
 
     func createDirectory(at url: URL) throws { try disk.createDirectory(at: url) }
     func contents(of directory: URL) throws -> [URL] { try disk.contents(of: directory) }
@@ -36,7 +39,10 @@ final class FailingFiles: HistoryFiles {
     }
     func copy(_ url: URL, to destination: URL) throws { try disk.copy(url, to: destination) }
     func replace(_ url: URL, with replacement: URL) throws { try disk.replace(url, with: replacement) }
-    func remove(_ url: URL) throws { try disk.remove(url) }
+    func remove(_ url: URL) throws {
+        if failingRemove.withLock({ $0 == url.lastPathComponent }) { throw RemoveFailed() }
+        try disk.remove(url)
+    }
 }
 
 private func entry(_ name: String, at seconds: TimeInterval, language: DetectedLanguage? = nil) -> HistoryEntry {
@@ -147,6 +153,40 @@ final class TranscriptHistoryTests {
         #expect(throws: (any Error).self) { try self.history.save(blocked, unicodeRecord) }
         #expect(history.entries.isEmpty)
         #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(blocked.id.uuidString).transcript.json").path))
+    }
+
+    @Test func loadingAfterASaveListsTheEntryOnce() async throws {
+        let saved = entry("saved.wav", at: 1_000)
+        try history.save(saved, emptyRecord)
+        await history.load()
+        #expect(history.entries == [saved])
+    }
+
+    @Test func aFailedDeleteKeepsTheEntryListedToDeleteAgain() throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let stuck = entry("stuck.wav", at: 1_000)
+        try history.save(stuck, unicodeRecord)
+        files.failRemovals(of: "\(stuck.id.uuidString).transcript.json")
+        #expect(throws: FailingFiles.RemoveFailed.self) { try history.delete(stuck.id) }
+        #expect(history.entries == [stuck])
+        #expect(try jsonFiles().contains("\(stuck.id.uuidString).json"))
+
+        files.failRemovals(of: nil)
+        try history.delete(stuck.id)
+        #expect(try jsonFiles().isEmpty)
+    }
+
+    @Test func aFailedClearReportsItAndKeepsTheEntryItCouldNotRemove() throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let stuck = entry("stuck.wav", at: 1_000), cleared = entry("cleared.wav", at: 2_000)
+        try history.save(stuck, emptyRecord)
+        try history.save(cleared, emptyRecord)
+        files.failRemovals(of: "\(stuck.id.uuidString).json")
+        #expect(throws: FailingFiles.RemoveFailed.self) { try history.deleteAll() }
+        #expect(history.entries == [stuck])
+        #expect(try jsonFiles().contains("\(stuck.id.uuidString).json"))
     }
 
     @Test func aFailedEditSummaryRestoresThePreviousTranscript() async throws {
