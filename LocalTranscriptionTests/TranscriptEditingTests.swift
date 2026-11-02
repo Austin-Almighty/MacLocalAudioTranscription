@@ -102,6 +102,17 @@ struct SpeakerEditingTests {
     @Test func pastingOverEverythingSpreadsWordsByPosition() {
         #expect(realign("one two three four five six") == ["0: one two three", "1: four five six"])
     }
+
+    @Test func wordsReplacingARunAcrossTheChangeGoWhereTheRunBegan() {
+        let longer = [SubtitleCue(start: 0, end: 0.9, text: "Hello there my", speaker: 0),
+                      SubtitleCue(start: 1, end: 1.9, text: "good friend morning.", speaker: 1)]
+        let edited = CueAlignment.realign(longer, to: "Hey there pal morning.")
+        #expect(edited.map { "\($0.speaker.map(String.init) ?? "-"): \($0.text)" } == ["0: Hey there pal", "1: morning."])
+    }
+
+    @Test func aSecondReplacementAfterAKeptWordGoesToTheCueItReplaces() {
+        #expect(realign("Hi there very fine morning.") == ["0: Hi there", "1: very fine morning."])
+    }
 }
 
 @MainActor

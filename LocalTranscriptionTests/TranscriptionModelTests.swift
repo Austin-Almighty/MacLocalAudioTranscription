@@ -516,7 +516,9 @@ final class TranscriptionEditingSafetyTests {
         windowA.useOtherVersion()
         #expect(!windowA.isEditing)
         #expect(!windowA.editConflict)
-        try await Task.sleep(for: .milliseconds(200))
+        for _ in 0..<250 where windowA.transcript != "Words from window B." {
+            try await Task.sleep(for: .milliseconds(20))
+        }
         #expect(windowA.transcript == "Words from window B.")
         #expect(try await history.record(for: shared.id).transcript == "Words from window B.")
     }
