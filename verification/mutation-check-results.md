@@ -9,7 +9,7 @@ The mutants cover the logic the suite can run without a model: subtitle cues and
 | Round | Killed | Survived |
 | --- | --- | --- |
 | Existing 146 tests | 55 of 84 | 29 |
-| With 11 new tests and one stricter test (158 tests) | 76 of 84 | 8 |
+| With 12 new tests and one stricter test (158 tests) | 76 of 84 | 8 |
 
 Two first-round kills, CUE-01 and UPD-08, crashed the test process with a Swift range or array-count trap rather than failing an expectation; they count as caught. Each of the 21 gaps was re-run after the new tests were added and was killed by the test written for it.
 
