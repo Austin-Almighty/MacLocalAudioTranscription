@@ -506,6 +506,7 @@ final class TranscriptionModel {
         saveDraft(reportingFailure: true)
     }
 
+    @discardableResult
     private func saveDraft(reportingFailure: Bool, overwriting: Bool = false) -> Bool {
         autosave?.cancel()
         guard let draft, let id = editingID, draft != transcript else { return true }
