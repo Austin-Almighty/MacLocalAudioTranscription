@@ -28,7 +28,7 @@ final class TranscriptionModel {
     private(set) var fileName = ""
     private(set) var status: String?
     private(set) var isReady = false
-    private(set) var modelIsDownloaded = Voz.isDownloaded()
+    private(set) var modelIsDownloaded: Bool
     private(set) var audioDuration: TimeInterval?
     private(set) var processingTime: TimeInterval?
     /// When the shown transcript was last edited, or nil if it is as transcribed.
@@ -86,6 +86,7 @@ final class TranscriptionModel {
          speakers: any SpeakerIdentifying = WhoSpeakerIdentifier.shared,
          history: TranscriptHistory = .shared) {
         self.recognizers = recognizers
+        modelIsDownloaded = recognizers.modelIsDownloaded
         self.languages = languages
         self.speakers = speakers
         self.history = history
@@ -245,9 +246,9 @@ final class TranscriptionModel {
             let recognizer = try await loadModel()
             status = "Transcribing on device…"
             transcriptionProgress = 0
-            let result = try await recognizer.transcribe(url, vocabulary: vocabulary) { progress in
-                Task { @MainActor [weak self] in
-                    self?.reportProgress(progress.fractionCompleted, for: current)
+            let result = try await recognizer.transcription(of: url, vocabulary: vocabulary) { [weak self] fraction in
+                Task { @MainActor in
+                    self?.reportProgress(fraction, for: current)
                 }
             }
             transcriptionProgress = nil
@@ -633,9 +634,9 @@ final class TranscriptionModel {
         }
     }
 
-    private func loadModel() async throws -> Voz {
+    private func loadModel() async throws -> any Transcribing {
         if !recognizers.isLoaded {
-            status = Voz.isDownloaded() ? "Loading Voz…" : "Downloading and preparing Voz…"
+            status = recognizers.modelIsDownloaded ? "Loading Voz…" : "Downloading and preparing Voz…"
         }
         let loaded = try await recognizers.recognizer()
         modelIsDownloaded = true

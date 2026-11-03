@@ -1,6 +1,7 @@
 import Foundation
 import Observation
 import Testing
+import Voz
 #if os(macOS)
 import AppKit
 import SwiftUI
@@ -153,6 +154,211 @@ struct VocabularyQueueTests {
         model.vocabularyText = "Something else"
         #expect(model.languageWarning?.vocabulary == ["Siobhan", "Patek Philippe"])
         #expect(model.vocabulary == ["Something else"])
+    }
+}
+
+/// Runs the transcription flow against a stand-in for Voz, so it needs no model and can pause mid-run.
+@MainActor
+final class StandInTranscriptionTests {
+    let history = TranscriptHistory.temporary()
+    let directory: URL
+    let recording: URL
+
+    init() throws {
+        directory = history.directory
+        recording = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString + ".m4a")
+        try Data("audio".utf8).write(to: recording)
+    }
+
+    deinit {
+        try? FileManager.default.removeItem(at: directory)
+        try? FileManager.default.removeItem(at: recording)
+    }
+
+    private func model(_ recognizers: RecognizerStore) -> TranscriptionModel {
+        TranscriptionModel(recognizers: recognizers, languages: FakeLanguageIdentifier(), history: history)
+    }
+
+    private func store(_ recognizer: any Transcribing) -> RecognizerStore {
+        RecognizerStore(isDownloaded: { true }, load: { _ in recognizer })
+    }
+
+    @Test func progressOnlyMovesForwardAndStopsAtTheEnd() async throws {
+        let recognizer = StandInRecognizer(pauses: true)
+        let model = model(store(recognizer))
+        let run = Task { await model.transcribe(recording) }
+        #expect(await eventually { await recognizer.reports.count == 1 })
+        let report = try #require(await recognizer.reports.first)
+
+        report(0.5)
+        await settle()
+        #expect(model.transcriptionProgress == 0.5)
+        report(0.3)
+        await settle()
+        #expect(model.transcriptionProgress == 0.5)
+        report(1.5)
+        await settle()
+        #expect(model.transcriptionProgress == 1)
+        #expect(model.progress == nil)
+
+        await recognizer.finish(0)
+        await run.value
+        #expect(model.transcriptionProgress == nil)
+    }
+
+    @Test func ignoresProgressFromAnEarlierRecording() async throws {
+        let recognizer = StandInRecognizer(pauses: true)
+        let model = model(store(recognizer))
+        let run = Task { await model.transcribe([recording, recording]) }
+        #expect(await eventually { await recognizer.reports.count == 1 })
+        await recognizer.finish(0)
+        #expect(await eventually { await recognizer.reports.count == 2 })
+        let reports = await recognizer.reports
+
+        reports[0](0.9)
+        await settle()
+        #expect(model.transcriptionProgress == 0)
+        reports[1](0.4)
+        await settle()
+        #expect(model.transcriptionProgress == 0.4)
+
+        await recognizer.finish(1)
+        await run.value
+    }
+
+    @Test func savesTheTimesVozReports() async throws {
+        let model = model(store(StandInRecognizer()))
+        await model.transcribe(recording)
+        #expect(model.errorMessage == nil)
+        #expect(model.audioDuration == 6)
+        #expect(model.processingTime == 0.25)
+        #expect(history.entries.first?.processingTime == 0.25)
+    }
+
+    @Test func retriesAModelLoadThatFailed() async throws {
+        let attempts = Attempts()
+        let recognizer = StandInRecognizer()
+        let model = model(RecognizerStore(isDownloaded: { true }, load: { _ in
+            if await attempts.next() == 1 { throw CocoaError(.fileReadCorruptFile) }
+            return recognizer
+        }))
+        await model.transcribe(recording)
+        #expect(model.errorMessage != nil)
+        #expect(!model.isReady)
+
+        await model.transcribe(recording)
+        #expect(model.errorMessage == nil)
+        #expect(model.isReady)
+        #expect(model.transcript == "Hello there.")
+        #expect(await attempts.count == 2)
+    }
+
+    @Test func importsWaitForPreparationToFinish() async throws {
+        let loading = Gate()
+        let recognizer = StandInRecognizer()
+        let model = model(RecognizerStore(isDownloaded: { true }, load: { _ in
+            await loading.wait()
+            return recognizer
+        }))
+        let preparing = Task { await model.prepare() }
+        #expect(await eventually { await loading.waiters == 1 })
+
+        let importing = Task { await model.transcribe(recording) }
+        #expect(await eventually { model.queuedCount == 1 })
+
+        await loading.open()
+        await preparing.value
+        await importing.value
+        #expect(model.queuedCount == 0)
+        #expect(model.transcript == "Hello there.")
+        #expect(!model.isBusy)
+    }
+
+    @Test func aSecondPrepareWaitsForTheFirst() async throws {
+        let loading = Gate()
+        let recognizer = StandInRecognizer()
+        let model = model(RecognizerStore(isDownloaded: { true }, load: { _ in
+            await loading.wait()
+            return recognizer
+        }))
+        let first = Task { await model.prepare() }
+        #expect(await eventually { await loading.waiters == 1 })
+        let second = Task {
+            await model.prepare()
+            return model.isReady
+        }
+        await settle()
+
+        await loading.open()
+        await first.value
+        #expect(await second.value)
+    }
+
+    /// Lets updates already sent to the main actor, such as progress reports, run first.
+    private func settle() async {
+        await Task { @MainActor in }.value
+    }
+
+    /// Waits up to five seconds for another task to make the condition true.
+    private func eventually(_ condition: () async -> Bool) async -> Bool {
+        for _ in 0..<250 {
+            if await condition() { return true }
+            try? await Task.sleep(for: .milliseconds(20))
+        }
+        return await condition()
+    }
+}
+
+/// Stands in for Voz. When it pauses, each transcription waits until the test finishes it.
+private actor StandInRecognizer: Transcribing {
+    let pauses: Bool
+    /// Each transcription’s progress reporter, in the order they started.
+    private(set) var reports: [@Sendable (Double) -> Void] = []
+    private var gates: [Gate] = []
+
+    init(pauses: Bool = false) { self.pauses = pauses }
+
+    func transcription(of url: URL, vocabulary: [String],
+                       progress: @escaping @Sendable (Double) -> Void) async throws -> Transcription {
+        let gate = Gate()
+        reports.append(progress)
+        gates.append(gate)
+        if pauses { await gate.wait() }
+        return Transcription(text: "Hello there.",
+                             words: [Word(text: "Hello", start: 0, end: 0.4), Word(text: "there.", start: 0.5, end: 0.9)],
+                             duration: 6, processingTime: 0.25)
+    }
+
+    func finish(_ index: Int) async {
+        await gates[index].open()
+    }
+}
+
+/// Holds callers until the test opens it; once open, it never holds anyone again.
+private actor Gate {
+    private(set) var waiters = 0
+    private var isOpen = false
+    private var held: [CheckedContinuation<Void, Never>] = []
+
+    func wait() async {
+        guard !isOpen else { return }
+        waiters += 1
+        await withCheckedContinuation { held.append($0) }
+    }
+
+    func open() {
+        isOpen = true
+        held.forEach { $0.resume() }
+        held = []
+    }
+}
+
+private actor Attempts {
+    private(set) var count = 0
+
+    func next() -> Int {
+        count += 1
+        return count
     }
 }
 
