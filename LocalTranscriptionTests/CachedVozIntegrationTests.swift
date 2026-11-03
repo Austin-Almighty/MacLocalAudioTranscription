@@ -3,6 +3,7 @@ import Testing
 import AVFoundation
 import Ear
 import Voz
+import Who
 @testable import LocalTranscription
 
 #if os(macOS) && arch(arm64)
@@ -64,6 +65,57 @@ final class CachedVozIntegrationTests {
         await model.select(plain)
         #expect(model.shownVocabulary.isEmpty)
         #expect(history.entries.first(where: { $0.id == plain })?.vocabulary == nil)
+    }
+
+    @Test func transcribingAnywayUsesTheNamesAndTermsFromImportTime() async throws {
+        let chinese = DetectedLanguage(code: "zh", confidence: 0.97, isReliable: true)
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier(result: chinese), history: history)
+        let names = try #require(Bundle(for: FixtureBundle.self)
+            .url(forResource: "names", withExtension: "m4a", subdirectory: "Fixtures"))
+        model.vocabularyText = "Siobhan, Patek Philippe"
+        await model.transcribe(names)
+        let warning = try #require(model.languageWarning)
+        model.vocabularyText = ""
+
+        model.hideLanguageWarning()
+        await model.transcribeAnyway(warning)
+        #expect(model.errorMessage == nil)
+        #expect(model.transcript.contains("Siobhan"))
+        #expect(model.shownVocabulary == ["Siobhan", "Patek Philippe"])
+        #expect(history.entries.first?.vocabulary == ["Siobhan", "Patek Philippe"])
+    }
+
+    @Test func identifiesSpeakersWhenAskedEvenAfterALanguageWarning() async throws {
+        let speakers = CountingSpeakerIdentifier()
+        let plain = TranscriptionModel(languages: FakeLanguageIdentifier(), speakers: speakers, history: history)
+        plain.identifySpeakers = true
+        await plain.transcribe(try fixture("wav"))
+        #expect(await speakers.calls == 1)
+        #expect(plain.speakerCount == 1)
+
+        let chinese = DetectedLanguage(code: "zh", confidence: 0.97, isReliable: true)
+        let warned = TranscriptionModel(languages: FakeLanguageIdentifier(result: chinese), speakers: speakers,
+                                        history: history)
+        warned.identifySpeakers = true
+        await warned.transcribe(try fixture("aiff"))
+        let warning = try #require(warned.languageWarning)
+        warned.identifySpeakers = false
+        warned.hideLanguageWarning()
+        await warned.transcribeAnyway(warning)
+        #expect(warned.errorMessage == nil)
+        #expect(await speakers.calls == 2)
+        #expect(warned.speakerCount == 1)
+    }
+
+    @Test func sharesOneLoadOfVozAcrossRequests() async throws {
+        let store = RecognizerStore()
+        #expect(!store.isLoaded)
+        async let first = store.recognizer()
+        async let second = store.recognizer()
+        let (a, b) = try await (first, second)
+        #expect(a === b)
+        #expect(try await store.recognizer() === a)
+        #expect(store.isLoaded)
     }
 
     @Test func aResultArrivingMidEditSavesTheDraftToItsOwnEntry() async throws {
@@ -284,4 +336,14 @@ final class CachedEarIntegrationTests {
 }
 
 private final class FixtureBundle: NSObject {}
+
+/// Stands in for Who, so speaker labeling runs without downloading its model.
+private actor CountingSpeakerIdentifier: SpeakerIdentifying {
+    private(set) var calls = 0
+
+    func identify(_ url: URL) -> [Turn] {
+        calls += 1
+        return [Turn(start: 0, end: 10, speaker: 0)]
+    }
+}
 #endif
