@@ -973,12 +973,13 @@ final class TranscriptionEditingSafetyTests {
         try history.save(first, TranscriptRecord(transcript: "Original words.", cues: []))
         let model = model()
         await model.select(first.id)
-        var answer = false
         var asked: [[String]] = []
+        // Keeps the recording the first time it’s asked, then discards it.
         let delegate = TranscriptWindowDelegate(model: model, originalDelegate: nil) { model, _ in
             asked.append(model.unsavedResults.map(\.entry.fileName))
-            if answer { model.discardUnsavedResults(model.unsavedResults) }
-            return answer
+            let discarding = asked.count > 1
+            if discarding { model.discardUnsavedResults(model.unsavedResults) }
+            return discarding
         }
         let window = NSWindow(contentRect: .zero, styleMask: [.titled, .closable],
                               backing: .buffered, defer: false)
@@ -1007,8 +1008,8 @@ final class TranscriptionEditingSafetyTests {
         #expect(!model.isEditing)
         #expect(model.fileName == "waiting.wav")
         #expect(asked == [["waiting.wav"]])
-        answer = true
         #expect(delegate.windowShouldClose(window))
+        #expect(asked.count == 2)
         #expect(model.unsavedResults.isEmpty)
     }
 
