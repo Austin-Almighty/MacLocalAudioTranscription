@@ -29,6 +29,12 @@ Launched a disposable Release copy with bundle ID `com.example.LocalTranscriptio
 
 The completed native interface showed the two correctly separated speaker paragraphs and “Speakers 2” in Recording Info. Turning the switch off during preparation did not remove the running import’s labels. The saved History JSON contains speaker numbers 0 and 1 in the cues and keeps them separate from the editable spoken text. Relaunching the test copy listed the saved entry. Native Copy and export dialogs were not repeated; export content is checked by the automated suite and real-model tool above.
 
+## Automated real-model test — November 3, 2026
+
+The checks above ran Who through a separate verification tool, and the test suite used a stand-in for it. The “Cached Who speaker identification” suite now runs the real Voz and Who models through the app’s own import path whenever both are cached in the test app’s sandbox. It transcribes `LocalTranscriptionTests/Fixtures/conversation.m4a`, 11.8 seconds of Samantha, Daniel, then Samantha again, with Identify Speakers on.
+
+Who returned three turns: 0 to 3.01 seconds for the first speaker, 4.17 to 7.77 for the second, and 8.94 to 11.61 for the first again. The test checks the labelled text, two speakers, each cue’s speaker, the labels in SRT captions, and that the saved History record and a reselected entry keep them. Downloading Who v0.3.1 (82 MB) into the empty sandbox cache and the first preparation took about 200 seconds; later runs take about 13 seconds alongside the other suites. A planted defect that drops speakers with under 40% of the recording failed the test with five issues. The full suite passed: 168 tests, none skipped.
+
 ## Scope and limits
 
 Identify Speakers is off by default and applies only to new imports. Old saved entries decode without a speaker field. The app retains every recognized word; words with tied or absent speaker overlap stay unlabelled. Editing realigns spoken words to the original labelled cues. It does not rerun voice identification, identify people by name, or assign two simultaneous voices to the same word. Renaming speakers and reanalysing existing entries are outside this change.
