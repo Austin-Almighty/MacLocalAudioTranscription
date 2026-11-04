@@ -155,6 +155,26 @@ final class TranscriptHistoryTests {
         #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(blocked.id.uuidString).transcript.json").path))
     }
 
+    @Test func aFailedSaveReportsItsOwnFailureWhenTheTranscriptCannotBeRemoved() async throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let stuck = entry("stuck.wav", at: 1_000)
+        files.failWrites(to: "\(stuck.id.uuidString).json")
+        files.failRemovals(of: "\(stuck.id.uuidString).transcript.json")
+        #expect(throws: FailingFiles.WriteFailed.self) { try history.save(stuck, unicodeRecord) }
+        #expect(history.entries.isEmpty)
+
+        // The transcript left behind has no summary, so it isn’t listed, and saving again still works.
+        let reopened = TranscriptHistory(directory: directory)
+        await reopened.load()
+        #expect(reopened.entries.isEmpty)
+        files.failWrites(to: nil)
+        files.failRemovals(of: nil)
+        try history.save(stuck, unicodeRecord)
+        #expect(history.entries == [stuck])
+        #expect(try await history.record(for: stuck.id) == unicodeRecord)
+    }
+
     @Test func loadingAfterASaveListsTheEntryOnce() async throws {
         let saved = entry("saved.wav", at: 1_000)
         try history.save(saved, emptyRecord)
@@ -221,6 +241,28 @@ final class TranscriptHistoryTests {
         #expect(try await history.record(for: saved.id) == unicodeRecord)
         #expect(history.entries.first?.edited == nil)
         #expect(try jsonFiles() == ["\(saved.id.uuidString).json", "\(saved.id.uuidString).transcript.json"].sorted())
+    }
+
+    @Test func aFailedFirstEditPutsBackTheTranscriptEvenWhenItsCopyCannotBeRemoved() async throws {
+        let files = FailingFiles()
+        let history = TranscriptHistory(directory: directory, files: files)
+        let saved = entry("saved.wav", at: 1_000)
+        try history.save(saved, unicodeRecord)
+
+        files.failWrites(to: "\(saved.id.uuidString).json")
+        files.failRemovals(of: "\(saved.id.uuidString).original.transcript.json")
+        // The edit’s failure is reported, not the cleanup’s.
+        #expect(throws: FailingFiles.WriteFailed.self) {
+            try history.update(saved.id, TranscriptRecord(transcript: "Edit.", cues: []), editedAt: .now)
+        }
+        #expect(try await history.record(for: saved.id) == unicodeRecord)
+        #expect(history.entries.first?.edited == nil)
+
+        // The copy left behind matches the transcript, so the next edit still keeps the words as transcribed.
+        files.failWrites(to: nil)
+        files.failRemovals(of: nil)
+        try history.update(saved.id, TranscriptRecord(transcript: "Edit.", cues: []), editedAt: .now)
+        #expect(try history.originalRecord(for: saved.id) == unicodeRecord)
     }
 
     /// An unreadable transcript can’t be put back, so a failed edit must leave it alone rather than remove it.

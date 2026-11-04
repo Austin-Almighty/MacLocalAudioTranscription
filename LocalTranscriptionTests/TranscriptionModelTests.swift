@@ -253,6 +253,38 @@ final class StandInTranscriptionTests {
         #expect(await attempts.count == 2)
     }
 
+    @Test func showsDownloadProgressUntilTheModelIsDownloaded() async throws {
+        let loading = Gate()
+        let download = DownloadReporter()
+        let store = RecognizerStore(isDownloaded: { false }, load: { report in
+            await download.start(report)
+            await loading.wait()
+            return StandInRecognizer()
+        })
+        let model = model(store)
+        let preparing = Task { await model.prepare() }
+        #expect(await eventually { await loading.waiters == 1 })
+        #expect(store.downloadProgress == 0)
+        let report = try #require(await download.report)
+
+        report(0.4)
+        await settle()
+        #expect(model.progress == 0.4)
+        report(0.2)
+        await settle()
+        #expect(model.progress == 0.4)
+        // Once downloaded, preparing the model for the Neural Engine shows a spinner.
+        report(1)
+        await settle()
+        #expect(store.downloadProgress == 1)
+        #expect(model.progress == nil)
+
+        await loading.open()
+        await preparing.value
+        #expect(store.downloadProgress == nil)
+        #expect(model.isReady)
+    }
+
     @Test func importsWaitForPreparationToFinish() async throws {
         let loading = Gate()
         let recognizer = StandInRecognizer()
@@ -351,6 +383,13 @@ private actor Gate {
         held.forEach { $0.resume() }
         held = []
     }
+}
+
+/// Keeps the download progress reporter a stand-in model loader was given.
+private actor DownloadReporter {
+    private(set) var report: (@Sendable (Double) -> Void)?
+
+    func start(_ report: @escaping @Sendable (Double) -> Void) { self.report = report }
 }
 
 private actor Attempts {
