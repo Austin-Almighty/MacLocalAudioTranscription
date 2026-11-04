@@ -335,6 +335,47 @@ final class CachedEarIntegrationTests {
     }
 }
 
+@Suite("Cached Who speaker identification", .serialized,
+       .enabled(if: Voz.isDownloaded() && Who.isDownloaded(),
+                "Prepare Voz in the app and transcribe once with Identify Speakers on before running these tests"))
+@MainActor
+final class CachedWhoIntegrationTests {
+    let history = TranscriptHistory.temporary()
+    let historyDirectory: URL
+
+    init() { historyDirectory = history.directory }
+    deinit { try? FileManager.default.removeItem(at: historyDirectory) }
+
+    @Test func labelsEachVoiceAndKeepsTheLabelsInHistory() async throws {
+        let model = TranscriptionModel(languages: FakeLanguageIdentifier(), history: history)
+        model.identifySpeakers = true
+        let conversation = try #require(Bundle(for: FixtureBundle.self)
+            .url(forResource: "conversation", withExtension: "m4a", subdirectory: "Fixtures"))
+        await model.transcribe(conversation)
+        #expect(model.errorMessage == nil)
+        #expect(model.speakerCount == 2)
+        // Two synthesized voices take turns: Samantha, then Daniel, then Samantha again.
+        #expect(model.displayTranscript.trimmingCharacters(in: .punctuationCharacters) == """
+            Speaker 1: Good morning. Thanks for joining the call today.
+
+            Speaker 2: Happy to be here. Shall we look at the schedule first?
+
+            Speaker 1: Yes, the launch moved to next Friday
+            """)
+        #expect(model.cues.map(\.speaker) == [0, 0, 1, 1, 0])
+        #expect(Subtitles.subRip(model.cues).contains("Speaker 2: Happy to be here."))
+
+        // The labels are saved with the transcript and come back when it’s selected again.
+        let saved = try #require(model.selection)
+        let cues = model.cues
+        await model.select(nil)
+        await model.select(saved)
+        #expect(model.cues == cues)
+        #expect(model.speakerCount == 2)
+        #expect(try await history.record(for: saved).cues == cues)
+    }
+}
+
 private final class FixtureBundle: NSObject {}
 
 /// Stands in for Who, so speaker labeling runs without downloading its model.
