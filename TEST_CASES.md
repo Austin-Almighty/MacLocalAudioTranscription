@@ -31,6 +31,7 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Subtitles | Export with no recognized words | Produce no cues, an empty SRT file, and a header-only WebVTT file. |
 | Export formats | Export text, SRT, and WebVTT | Use `.txt`, `.srt`, and `.vtt` with matching file types the document can write. |
 | Progress | Report progress with no transcription or download running | Ignore the late update and show no progress. |
+| Progress | Prepare a model that isn’t downloaded with a stand-in loader that reports download progress | Progress starts at zero, only moves forward, shows a spinner once the download is complete, and clears when the model is ready. |
 | Subtitles | Transcribe each fixture with the real model | Produce cues within the recording’s duration and clear transcription progress afterward. |
 | Language check | Detections of Chinese, Japanese, English, German, uncertain Chinese, and uncertain Swedish | Warn only for confident detections of languages Voz doesn’t support. |
 | Language check | Read all seven fixture formats, a seven-minute stereo recording, and non-audio data | Short files are read whole; long ones as six evenly spaced 30-second mono segments from start to end; non-audio is rejected. |
@@ -45,6 +46,7 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | History | Delete one entry, then clear history | Both files of a deleted entry are removed; clearing leaves no saved transcripts. |
 | History | Clear history when only damaged, newer-format, and orphaned transcript files remain; clear an absent folder twice; save when the summary can’t be written | Clearing remains available with an empty list, removes hidden transcript files, and is safe to repeat; a failed save leaves no transcript file behind. |
 | History | Edit a saved entry when only the summary file can’t be written, on the first edit and on a later one (a test double fails that one write) | The edit reports an error; the previous transcript, edited date and original copy are kept as they were, and a first edit leaves no original copy behind. |
+| History | Save, then make a first edit, when the summary can’t be written and cleaning up after it fails too (a test double fails both) | Each reports the first failure, not the cleanup’s; the failed save lists nothing and saving again works; the failed edit still puts back the transcript, and the next edit keeps the words as transcribed. |
 | History | Transcribe three seconds of silence | Nothing is recognized and nothing is saved. |
 | Vocabulary | Parse terms with commas, line breaks, extra spaces, repeats, different case, and Unicode | Keep phrases and case, drop blanks and exact repeats. |
 | Vocabulary | Change the terms after queuing a file | The queued file keeps the terms entered when it was added. |
