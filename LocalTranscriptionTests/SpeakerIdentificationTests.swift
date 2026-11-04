@@ -197,8 +197,14 @@ private struct SeededGenerator: RandomNumberGenerator {
 private actor FakeSpeakerIdentifier: SpeakerIdentifying {
     private(set) var calls = 0
     let fails: Bool
+    let downloaded: Bool
 
-    init(fails: Bool = false) { self.fails = fails }
+    init(fails: Bool = false, downloaded: Bool = true) {
+        self.fails = fails
+        self.downloaded = downloaded
+    }
+
+    func isModelDownloaded() -> Bool { downloaded }
 
     func identify(_ url: URL) throws -> [Turn] {
         calls += 1
@@ -228,6 +234,20 @@ struct SpeakerIdentificationTests {
         #expect(cues == Subtitles.cues(from: conversation))
         #expect(await identifier.calls == 1)
         #expect(model.errorMessage?.contains("“interview.wav” was transcribed") == true)
+        #expect(model.errorMessage?.contains("one-time download") == false)
+        #expect(!model.isBusy)
+    }
+
+    @Test func failedFirstUseExplainsThatWhoNeedsADownload() async {
+        // Scenario 9: offline, the underlying error is only “Operation not permitted” or similar.
+        let identifier = FakeSpeakerIdentifier(fails: true, downloaded: false)
+        let model = TranscriptionModel(speakers: identifier, history: .temporary())
+        let cues = await model.subtitleCues(from: conversation, url: URL(fileURLWithPath: "/interview.wav"), identifySpeakers: true)
+        #expect(cues == Subtitles.cues(from: conversation))
+        let message = model.errorMessage ?? ""
+        #expect(message.hasPrefix("“interview.wav” was transcribed, but its speakers couldn’t be identified."))
+        #expect(message.contains("Who needs a one-time download"))
+        #expect(message.contains("internet connection"))
         #expect(!model.isBusy)
     }
 
