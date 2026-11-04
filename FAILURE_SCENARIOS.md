@@ -31,8 +31,8 @@ These affect label quality more than data safety; no recognized word is ever dro
 | --- | --- | --- | --- |
 | 7 | Words in gaps between speaker turns, or tied between two speakers, get no label and become separate unlabelled paragraphs | Unit test with turns that leave short gaps; check the plain text for paragraphs without “Speaker N:” | Give such a word the nearest turn’s speaker within a short window, else the previous word’s |
 | 8 | Editing across a speaker change (deleting all of one speaker’s words, pasting across the boundary) gives words the wrong speaker | Unit test of cue realignment with labelled cues | Decided: keep the current behavior, now covered by `SpeakerEditingTests` |
-| 9 | First use of Who while offline | Isolated app with an empty Who cache under `Scripts/offline.sb` | Expected: transcript kept, a clear error; fix only if it hangs or says nothing |
-| 10 | Long recordings: Who reads the whole file | Run the 20-minute file under `build/manual-checks/`; record time and peak memory | If memory is too high, warn above a length or process in parts |
+| 9 | First use of Who while offline | Isolated app with an empty Who cache under `Scripts/offline.sb` | Checked: transcript kept, an error names the recording, no hang; no fix needed |
+| 10 | Long recordings: Who reads the whole file | Run the 20-minute file under `build/manual-checks/`; record time and peak memory | Checked: a 2-hour file peaks at about 0.75 GiB; no warning or parts needed |
 | 11 | Voz word timings out of order or overlapping; the matching code assumes time order | Randomised test with shuffled and overlapping words | Sort words by start time before matching |
 | 12 | The user types “Speaker 1:” into the text, and the view shows “Speaker 1: Speaker 1: …” | Unit test of the plain-text display | Low priority; likely leave as is |
 
@@ -75,7 +75,7 @@ Four phases, each a separate PR. Every fix starts as a failing test, as in PR #2
 3. **Speaker quality.** Fix 7 and 11, settle the expected behavior for 8, and measure 9 and 10.
    - [x] Nearest-turn fallback (7) and sorting (11): the window is `Subtitles.maxPause` (1 s), the pause that already ends a cue
    - [x] Decision and tests for 8: keep the current behavior, covered by `SpeakerEditingTests`. A replaced word keeps its speaker, typed words join the speaker before, and a paste is spread by position; splitting by proportion or leaving words unlabelled was rejected
-   - [ ] Offline first use (9) and long-file measurements (10)
+   - [x] Offline first use (9) and long-file measurements (10): both as expected, no fix needed ([report](verification/who-offline-long-file-results.md)). Who’s memory grows about 225 MiB per hour of audio; the first preparation peaked near 1.45 GiB on a 23-second file (seen once)
 4. **Platform.** Update the simulator runtime, then test 6; run the disk-full check for 14.
    - [ ] Simulator runtime updated
    - [ ] Draft recovery for 6
