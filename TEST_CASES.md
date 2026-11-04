@@ -58,7 +58,7 @@ xcodebuild test -project LocalTranscription.xcodeproj -scheme LocalTranscription
 | Speakers | Process 10,000 words and turns, including invalid turn timings | Invalid turns are ignored; speaker numbers stay in order without scanning the whole recording for every word. |
 | Speakers | Export labelled cues as text, SRT, and WebVTT | Text groups contiguous speakers; captions include labels, keep timings, and account for labels in their line limits. |
 | Speakers | Reload older History JSON, reopen labelled history, edit, delete and restore all text, and revert | Old entries stay unlabelled; speaker numbers and cue timings survive each operation. |
-| Speakers | Disable Who, transcribe silence, or fail speaker identification | Disabled and empty results never load Who; failure reports the file and retains unlabelled cues. |
+| Speakers | Disable Who, transcribe silence, or fail speaker identification | Disabled and empty results never load Who; failure reports the file and retains unlabelled cues; a failure before Who was ever downloaded also says it needs a one-time download and an internet connection. |
 | Speakers | Change Identify Speakers while files wait behind a language warning | Each import keeps its original setting. |
 | Speakers | Transcribe a two-voice conversation with the real Voz and Who models, then select it again from History | Who labels the voices Speaker 1, Speaker 2, Speaker 1 in turn; the text, SRT captions, and the saved entry keep the labels. |
 | Vocabulary | Save and reopen an entry with terms | The terms are kept with the entry. |

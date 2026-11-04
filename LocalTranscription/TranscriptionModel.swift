@@ -269,12 +269,18 @@ final class TranscriptionModel {
         let previousStatus = status
         status = "Identifying speakers with Who…"
         defer { status = previousStatus }
+        // Checked before the attempt: a failed download can leave Who’s folder behind.
+        let needsDownload = !(await speakers.isModelDownloaded())
         do {
             let turns = try await speakers.identify(url)
             return Subtitles.cues(from: words, speakers: SpeakerAttribution.speakers(for: words, turns: turns))
         } catch {
             Self.speakerLogger.error("Speaker identification failed: \(error.localizedDescription, privacy: .public)")
-            appendError("“\(url.lastPathComponent)” was transcribed, but its speakers couldn’t be identified. \(error.localizedDescription)")
+            // Offline, the underlying error is often just “Operation not permitted”.
+            let reason = needsDownload
+                ? "Who needs a one-time download before its first use. Check your internet connection and try again. (\(error.localizedDescription))"
+                : error.localizedDescription
+            appendError("“\(url.lastPathComponent)” was transcribed, but its speakers couldn’t be identified. \(reason)")
             return Subtitles.cues(from: words)
         }
     }
