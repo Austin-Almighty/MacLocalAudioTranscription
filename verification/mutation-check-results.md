@@ -96,4 +96,8 @@ Six tests in `StandInTranscriptionTests` pause the stand-in mid-run and need no 
 
 All eight were re-run and each was killed by its test. TRX-01, TRX-18, REC-02 and REC-03 sit on lines the refactor moved, so they were re-anchored and re-run; all four are still killed. The full suite passed: 167 tests, none skipped. One run took 308 seconds while a game was running on the Mac; `main` and this change, timed back to back under the same load, took 58 and 57 seconds.
 
+## Real Who model — November 3, 2026
+
+Who is now cached in the test sandbox, and the “Cached Who speaker identification” suite runs it on a two-voice recording; see the [Who verification report](who-check-results.md). One mutant was tried by hand: having `WhoSpeakerIdentifier` keep only speakers with at least 40% of the recording, a plausible cleanup that drops the second voice. The new test killed it with five failed expectations, and the file was restored. The full suite passed: 168 tests, none skipped.
+
 The mutant list, the script, per-mutant logs, and JSON results are in the ignored `build/mutation-testing/` folder. Re-run with `python3 -I build/mutation-testing/run_mutants.py [mutant IDs]`, adding `MUTANTS=mutants_trx RESULTS=results-trx.jsonl` in front for the transcription mutants; `--check` confirms every mutant still matches the source exactly once.

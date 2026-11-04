@@ -12,7 +12,7 @@ Turn on **Identify Speakers (Who)** in Recording Info before importing a convers
 
 Speaker labels appear in the transcript, timestamp view, Copy, text exports, and SRT/WebVTT captions. Cues split at speaker changes; a word is assigned to the speaker with the greatest overlap, while ties and gaps remain unlabelled. The spoken text stays separate from the labels while editing, and edits and Revert to Original preserve the labels and original timings. Labels are saved with the timed cues in History. If Who cannot download or analyse the recording, the transcript is kept without labels and an error names the recording. A recording with no recognized words does not load Who.
 
-The [Who verification report](verification/who-check-results.md) records passing Mac tests and iOS compilation, plus real Voz/Who inference and exports from a synthetic two-voice conversation, including an offline run. First-use Neural Engine preparation can take several minutes.
+The [Who verification report](verification/who-check-results.md) records passing Mac tests and iOS compilation, plus real Voz/Who inference and exports from a synthetic two-voice conversation, including an offline run. Since November 3, 2026, the test suite also runs the real Who model whenever it is cached. First-use Neural Engine preparation can take several minutes.
 
 Choose **Edit** to correct a saved transcript, then **Done**. Edits also save automatically a second after you stop typing, and when you switch entries, copy, export, close the window, move the app to the background or quit it, or a queued recording finishes. Subtitle cues keep their original timings: each edited word moves into the cue of the word it replaced or follows, so SRT and WebVTT exports stay in sync. Recording Info shows when a transcript was edited and offers **Revert to Original…**, which asks before restoring the text as transcribed. Only transcripts saved to History can be edited.
 
@@ -107,9 +107,9 @@ print(result.text)
 
 ## Verify
 
-In Xcode, use **Product → Test**. The [test cases and manual UI checklist](TEST_CASES.md) describe the coverage and expected behavior. The original suite contains 13 automated tests covering 24 cases: file validation, initial state, seven audio formats, Unicode file names, result retention after errors, recovery from corrupt audio, repeated model preparation, and UTF-8 transcript export/read validation.
+In Xcode, use **Product → Test**. The [test cases and manual UI checklist](TEST_CASES.md) describe the coverage and expected behavior. The suite contains 168 automated tests in 23 suites, covering file validation, seven audio formats, transcription and progress, subtitles and SRT/WebVTT export, speaker labels, editing, History, the import queue, language checks, and app updates. The [mutation testing report](verification/mutation-check-results.md) measures how many planted defects it catches.
 
-All 24 cases passed on this Apple M4 Pro in about 6.6 seconds. The integration suite uses the real cached Voz model and skips explicitly when the model is not installed. It is compiled only for Apple Silicon macOS and never downloads weights. The other tests do not require a prepared model. The speech fixtures are bundled in the test target and do not require FFmpeg at test time.
+All 168 passed on this Apple M4 Pro on November 3, 2026, with every model cached, in about one to two minutes depending on load; the Ear suite takes most of that time. Three suites use real cached models and skip explicitly when theirs is not installed: “Cached Voz integration” needs Voz, “Cached Ear language check” also needs Ear, and “Cached Who speaker identification” also needs Who. They are compiled only for Apple Silicon macOS and never download weights. Prepare Voz in the app, which then fetches Ear, and transcribe once with Identify Speakers on to fetch Who. The other tests do not require a prepared model. The speech fixtures are bundled in the test target and do not require FFmpeg at test time.
 
 Verified with Xcode on this Mac: package resolution at Voz 4.0.0, the macOS Apple Silicon build and regression suite, and the unsigned iOS device build passed. Debug builds use the active architecture so the app and SwiftPM dependencies agree. `Package.resolved` records the resolved SDK and dependency revisions. Swift syntax, project references, the shared scheme, and entitlements also passed validation.
 
@@ -127,7 +127,7 @@ For inference verification, import a short English recording on a physical devic
 
 The Mac update suite adds six tests covering numeric version ordering, invalid versions, unpublished releases, untrusted download links, malformed or missing assets, and HTTP failures. These tests pass independently of the model and network. Live release downloads require a published release and remain unverified.
 
-The subtitle suite adds ten tests covering cue grouping at sentence ends, pauses, and length limits; two-line wrapping; minimum cue duration without overlap; exact SRT and WebVTT output, including timestamps past one hour; recordings with no speech; and export file types. Two more tests check that late progress updates are ignored. Progress bars and subtitle export from a real recording have not yet been checked with the model loaded.
+The subtitle suite adds ten tests covering cue grouping at sentence ends, pauses, and length limits; two-line wrapping; minimum cue duration without overlap; exact SRT and WebVTT output, including timestamps past one hour; recordings with no speech; and export file types. Two more tests check that late progress updates are ignored. The cached Voz suite checks cues from real recordings and that progress clears afterward, the cached Who suite checks labelled SRT captions from a real two-voice recording, and the progress bar was confirmed in the app on November 2, 2026.
 
 ## Verified model inference on this Mac
 
