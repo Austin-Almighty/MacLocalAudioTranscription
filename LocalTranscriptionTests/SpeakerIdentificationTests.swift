@@ -197,17 +197,20 @@ private struct SeededGenerator: RandomNumberGenerator {
 private actor FakeSpeakerIdentifier: SpeakerIdentifying {
     private(set) var calls = 0
     let fails: Bool
-    let downloaded: Bool
+    private var downloaded: Bool
+    private let completesDownload: Bool
 
-    init(fails: Bool = false, downloaded: Bool = true) {
+    init(fails: Bool = false, downloaded: Bool = true, completesDownload: Bool = false) {
         self.fails = fails
         self.downloaded = downloaded
+        self.completesDownload = completesDownload
     }
 
     func isModelDownloaded() -> Bool { downloaded }
 
     func identify(_ url: URL) throws -> [Turn] {
         calls += 1
+        downloaded = downloaded || completesDownload
         if fails { throw CocoaError(.fileReadCorruptFile) }
         return turns
     }
@@ -227,13 +230,15 @@ struct SpeakerIdentificationTests {
         #expect(!model.isBusy)
     }
 
-    @Test func failedIdentificationPreservesTheTranscriptAndReportsTheFile() async {
-        let identifier = FakeSpeakerIdentifier(fails: true)
+    @Test(arguments: [true, false])
+    func failedIdentificationPreservesTheTranscriptAndReportsTheFile(startsDownloaded: Bool) async {
+        let identifier = FakeSpeakerIdentifier(fails: true, downloaded: startsDownloaded, completesDownload: true)
         let model = TranscriptionModel(speakers: identifier, history: .temporary())
         let cues = await model.subtitleCues(from: conversation, url: URL(fileURLWithPath: "/interview.wav"), identifySpeakers: true)
         #expect(cues == Subtitles.cues(from: conversation))
         #expect(await identifier.calls == 1)
         #expect(model.errorMessage?.contains("“interview.wav” was transcribed") == true)
+        #expect(model.errorMessage?.contains(CocoaError(.fileReadCorruptFile).localizedDescription) == true)
         #expect(model.errorMessage?.contains("one-time download") == false)
         #expect(!model.isBusy)
     }
