@@ -274,7 +274,12 @@ final class TranscriptionModel {
             return Subtitles.cues(from: words, speakers: SpeakerAttribution.speakers(for: words, turns: turns))
         } catch {
             Self.speakerLogger.error("Speaker identification failed: \(error.localizedDescription, privacy: .public)")
-            appendError("“\(url.lastPathComponent)” was transcribed, but its speakers couldn’t be identified. \(error.localizedDescription)")
+            // The download may have finished before preparation or prediction failed.
+            let needsDownload = !(await speakers.isModelDownloaded())
+            let reason = needsDownload
+                ? "Who needs a one-time download before its first use. Check your internet connection and try again. (\(error.localizedDescription))"
+                : error.localizedDescription
+            appendError("“\(url.lastPathComponent)” was transcribed, but its speakers couldn’t be identified. \(reason)")
             return Subtitles.cues(from: words)
         }
     }

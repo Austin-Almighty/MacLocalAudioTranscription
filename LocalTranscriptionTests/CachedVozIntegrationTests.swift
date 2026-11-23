@@ -382,6 +382,8 @@ private final class FixtureBundle: NSObject {}
 private actor CountingSpeakerIdentifier: SpeakerIdentifying {
     private(set) var calls = 0
 
+    func isModelDownloaded() -> Bool { true }
+
     func identify(_ url: URL) -> [Turn] {
         calls += 1
         return [Turn(start: 0, end: 10, speaker: 0)]

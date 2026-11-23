@@ -3,6 +3,8 @@ import Voz
 import Who
 
 protocol SpeakerIdentifying: Sendable {
+    /// Whether the model is on disk, so identifying speakers needs no download.
+    func isModelDownloaded() async -> Bool
     func identify(_ url: URL) async throws -> [Turn]
 }
 
@@ -10,6 +12,8 @@ protocol SpeakerIdentifying: Sendable {
 struct WhoSpeakerIdentifier: SpeakerIdentifying {
     static let shared = WhoSpeakerIdentifier()
     private let who = Who()
+
+    func isModelDownloaded() -> Bool { who.isDownloaded() }
 
     func identify(_ url: URL) async throws -> [Turn] {
         try await who.diarize(contentsOf: url).turns
